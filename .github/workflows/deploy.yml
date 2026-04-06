@@ -37,7 +37,6 @@ jobs:
           VITE_API_BASE: ${{ vars.VITE_API_BASE }}
           VITE_AV_KEY: ${{ vars.VITE_AV_KEY }}
           VITE_FINNHUB_KEY: ${{ vars.VITE_FINNHUB_KEY }}
-          VITE_UPSTOX_CLIENT_ID: ${{ vars.VITE_UPSTOX_CLIENT_ID }}
 
       - uses: actions/upload-pages-artifact@v3
         with:

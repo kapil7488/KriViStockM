@@ -7,7 +7,6 @@ import {
   generateSampleData, fetchDailyData, generateFundamentals,
   fetchIndianStockQuote, fetchIndianMultipleQuotes, fundamentalsFromLiveQuote,
   fetchFinnhubQuote, fetchFinnhubMetrics, buildFinnhubFundamentals,
-  fetchUpstoxHistorical, fetchUpstoxQuote, fetchUpstoxMultipleQuotes,
   fetchYahooQuote, fetchYahooHistorical, fetchYahooFundamentals,
 } from '../services/stockApi';
 import { generateSignal } from '../services/scoringEngine';
@@ -26,9 +25,9 @@ interface UseStockDataReturn {
   watchlistQuotes: LiveQuote[];
   signalHistory: StockSignal[];
   dataSource: DataSource;
-  analyze: (symbol: string, market: Market, apiKey?: string, upstoxToken?: string, finnhubKey?: string) => Promise<void>;
-  fetchWatchlist: (symbols: string[], market: Market, upstoxToken?: string, finnhubKey?: string) => Promise<void>;
-  refreshQuote: (symbol: string, market: Market, upstoxToken?: string, finnhubKey?: string) => Promise<void>;
+  analyze: (symbol: string, market: Market, apiKey?: string, finnhubKey?: string) => Promise<void>;
+  fetchWatchlist: (symbols: string[], market: Market, finnhubKey?: string) => Promise<void>;
+  refreshQuote: (symbol: string, market: Market, finnhubKey?: string) => Promise<void>;
   lastRefreshed: number;
   riskParams: RiskParameters;
 }
@@ -47,7 +46,7 @@ export function useStockData(): UseStockDataReturn {
   const [lastRefreshed, setLastRefreshed] = useState<number>(Date.now());
   const riskParams = DEFAULT_RISK_PARAMS;
 
-  const analyze = useCallback(async (symbol: string, market: Market, apiKey?: string, upstoxToken?: string, finnhubKey?: string) => {
+  const analyze = useCallback(async (symbol: string, market: Market, apiKey?: string, finnhubKey?: string) => {
     setLoading(true);
     setError(null);
     setLiveQuote(null);
@@ -57,42 +56,8 @@ export function useStockData(): UseStockDataReturn {
       let data: StockBar;
       let src: DataSource = 'simulated';
 
-      // ---- UPSTOX path: real historical + live quote for NSE/BSE ----
-      if ((market === 'NSE' || market === 'BSE') && upstoxToken) {
-        // Try real historical data from Upstox
-        try {
-          data = await fetchUpstoxHistorical(symbol, upstoxToken, market);
-          src = 'live-api';
-        } catch {
-          // Fallback: fetch live quote first, then generate sample data anchored to real price
-          try {
-            live = await fetchUpstoxQuote(symbol, upstoxToken, market);
-            setLiveQuote(live);
-          } catch {
-            try {
-              live = await fetchIndianStockQuote(symbol, market);
-              setLiveQuote(live);
-            } catch { /* no live quote */ }
-          }
-          data = generateSampleData(symbol, 1300, live?.lastPrice);
-          src = live ? 'live-patched' : 'simulated';
-        }
-
-        // If we got historical data, still try to get a live quote
-        if (src === 'live-api' && !live) {
-          try {
-            live = await fetchUpstoxQuote(symbol, upstoxToken, market);
-            setLiveQuote(live);
-          } catch {
-            try {
-              live = await fetchIndianStockQuote(symbol, market);
-              setLiveQuote(live);
-            } catch { /* no live quote */ }
-          }
-        }
-      }
-      // ---- Free Indian API path (no Upstox token) ----
-      else if (market === 'NSE' || market === 'BSE') {
+      // ---- Indian market path: Yahoo Finance for history + free API for live ----
+      if (market === 'NSE' || market === 'BSE') {
         // Try Yahoo Finance for REAL historical daily OHLC (free, no key, no rate limit)
         try {
           data = await fetchYahooHistorical(symbol, market);
@@ -215,13 +180,10 @@ export function useStockData(): UseStockDataReturn {
   }, [riskParams]);
 
   /** Lightweight live-quote refresh — updates liveQuote AND patches chart's last bar. */
-  const refreshQuote = useCallback(async (symbol: string, market: Market, upstoxToken?: string, finnhubKey?: string) => {
+  const refreshQuote = useCallback(async (symbol: string, market: Market, finnhubKey?: string) => {
     try {
       let live: LiveQuote | null = null;
-      if ((market === 'NSE' || market === 'BSE') && upstoxToken) {
-        try { live = await fetchUpstoxQuote(symbol, upstoxToken, market); }
-        catch { live = await fetchIndianStockQuote(symbol, market); }
-      } else if (market === 'NSE' || market === 'BSE') {
+      if (market === 'NSE' || market === 'BSE') {
         live = await fetchIndianStockQuote(symbol, market);
       } else if (finnhubKey) {
         try { live = await fetchFinnhubQuote(symbol, finnhubKey); }
@@ -257,21 +219,8 @@ export function useStockData(): UseStockDataReturn {
     }
   }, []);
 
-  const fetchWatchlist = useCallback(async (symbols: string[], market: Market, upstoxToken?: string, finnhubKey?: string) => {
-    if ((market === 'NSE' || market === 'BSE') && upstoxToken) {
-      try {
-        const quotes = await fetchUpstoxMultipleQuotes(symbols, upstoxToken, market);
-        setWatchlistQuotes(quotes);
-      } catch {
-        // Fallback to free Indian API
-        try {
-          const quotes = await fetchIndianMultipleQuotes(symbols, market);
-          setWatchlistQuotes(quotes);
-        } catch {
-          setWatchlistQuotes([]);
-        }
-      }
-    } else if (market === 'NSE' || market === 'BSE') {
+  const fetchWatchlist = useCallback(async (symbols: string[], market: Market, finnhubKey?: string) => {
+    if (market === 'NSE' || market === 'BSE') {
       try {
         const quotes = await fetchIndianMultipleQuotes(symbols, market);
         setWatchlistQuotes(quotes);

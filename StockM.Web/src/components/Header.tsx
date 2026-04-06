@@ -2,23 +2,18 @@ import { Market, MARKETS, LiveQuote, SignalType } from '../types';
 
 interface HeaderProps {
   symbol: string;
-  upstoxToken: string;
-  upstoxLoading: boolean;
   loading: boolean;
   market: Market;
   liveQuote: LiveQuote | null;
   hasApiKey: boolean;
-  hasUpstoxClientId: boolean;
   onSymbolChange: (s: string) => void;
-  onUpstoxLogin: () => void;
-  onUpstoxLogout: () => void;
   onMarketChange: (m: Market) => void;
   onAnalyze: () => void;
 }
 
 export function Header({
-  symbol, upstoxToken, upstoxLoading, loading, market, liveQuote, hasApiKey, hasUpstoxClientId,
-  onSymbolChange, onUpstoxLogin, onUpstoxLogout, onMarketChange, onAnalyze,
+  symbol, loading, market, liveQuote, hasApiKey,
+  onSymbolChange, onMarketChange, onAnalyze,
 }: HeaderProps) {
   const mktConfig = MARKETS.find(m => m.id === market)!;
 
@@ -83,31 +78,9 @@ export function Header({
           </span>
         )}
         {market !== 'US' && (
-          <>
-            {upstoxToken ? (
-              <>
-                <span className="api-label" style={{ color: '#22c55e', fontSize: '0.8rem' }}>
-                  🟢 Upstox Live + History
-                </span>
-                <button className="btn-upstox logout" onClick={onUpstoxLogout} title="Disconnect Upstox">
-                  ✕ Logout
-                </button>
-              </>
-            ) : hasUpstoxClientId ? (
-              <>
-                <button className="btn-upstox login" onClick={onUpstoxLogin} disabled={upstoxLoading}>
-                  {upstoxLoading ? '⏳ Connecting...' : '🔗 Login with Upstox'}
-                </button>
-                <span className="api-label" style={{ color: '#f59e0b', fontSize: '0.75rem', marginLeft: '0.4rem' }}>
-                  For real NSE/BSE history
-                </span>
-              </>
-            ) : (
-              <span className="api-label" style={{ color: '#22c55e', fontSize: '0.8rem' }}>
-                🟢 Free API (live only)
-              </span>
-            )}
-          </>
+          <span className="api-label" style={{ color: '#22c55e', fontSize: '0.8rem' }}>
+            🟢 Yahoo Finance (live + history)
+          </span>
         )}
       </div>
     </header>

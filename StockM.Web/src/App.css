@@ -92,25 +92,6 @@ body {
   border-radius: var(--radius-sm); width: 140px; outline: none;
 }
 
-/* Upstox Login/Logout buttons */
-.btn-upstox {
-  padding: 5px 12px; font-size: 11px; font-weight: 600;
-  border-radius: var(--radius-sm); cursor: pointer; border: none;
-  transition: all 0.15s;
-}
-.btn-upstox.login {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  color: #fff;
-}
-.btn-upstox.login:hover:not(:disabled) { opacity: 0.85; }
-.btn-upstox.login:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-upstox.logout {
-  background: var(--bg-card); color: var(--text-muted);
-  border: 1px solid var(--border); font-size: 10px; padding: 3px 8px;
-  margin-left: 4px;
-}
-.btn-upstox.logout:hover { color: #ef4444; border-color: #ef4444; }
-
 /* ======================== WATCHLIST ======================== */
 .watchlist {
   display: flex; flex-wrap: wrap; gap: 6px;

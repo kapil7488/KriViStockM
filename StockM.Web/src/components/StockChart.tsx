@@ -169,7 +169,6 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
             <span className="ds-badge simulated">⚠️ SIMULATED</span>
             <span className="ds-text">
               Chart data is simulated — Yahoo Finance historical data was unavailable.
-              For Indian markets, login with <b>Upstox</b> for real history.
             </span>
           </>
         )}
@@ -186,7 +185,7 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
           <>
             <span className="ds-badge live">🟢 LIVE DATA</span>
             <span className="ds-text">
-              Real OHLC data from Yahoo Finance / Upstox — reflects actual market prices.
+              Real OHLC data from Yahoo Finance — reflects actual market prices.
             </span>
           </>
         )}

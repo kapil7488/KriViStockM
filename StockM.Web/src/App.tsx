@@ -19,14 +19,11 @@ type SidebarTab = 'insights' | 'technical' | 'fundamental' | 'quant' | 'risk' | 
 // Read API keys from environment (set in .env, never committed to git)
 const AV_KEY = import.meta.env.VITE_AV_KEY || '';
 const FINNHUB_KEY = import.meta.env.VITE_FINNHUB_KEY || '';
-const UPSTOX_CLIENT_ID = import.meta.env.VITE_UPSTOX_CLIENT_ID || '';
 
 export default function App() {
   const [symbol, setSymbol] = useState('AAPL');
   const apiKey = AV_KEY;
   const finnhubKey = FINNHUB_KEY;
-  const [upstoxToken, setUpstoxToken] = useState(() => sessionStorage.getItem('upstox_token') || '');
-  const [upstoxLoading, setUpstoxLoading] = useState(false);
   const [market, setMarket] = useState<Market>('US');
   const [activeTab, setActiveTab] = useState<SidebarTab>('insights');
   const {
@@ -38,21 +35,19 @@ export default function App() {
   const mktConfig = MARKETS.find(m => m.id === market)!;
   const symbolRef = useRef(symbol);
   const marketRef = useRef(market);
-  const upstoxRef = useRef(upstoxToken);
   const finnhubRef = useRef(finnhubKey);
   symbolRef.current = symbol;
   marketRef.current = market;
-  upstoxRef.current = upstoxToken;
   finnhubRef.current = finnhubKey;
 
   // When market changes, update the default symbol and refresh watchlist quotes
   useEffect(() => {
     const defaultSymbol = mktConfig.watchlist[0];
     setSymbol(defaultSymbol);
-    fetchWatchlist(mktConfig.watchlist, market, upstoxToken || undefined, finnhubKey || undefined);
+    fetchWatchlist(mktConfig.watchlist, market, finnhubKey || undefined);
     // Auto-analyze the default symbol so live data loads immediately
-    analyze(defaultSymbol, market, apiKey || undefined, upstoxToken || undefined, finnhubKey || undefined);
-  }, [market, mktConfig, fetchWatchlist, apiKey, finnhubKey, upstoxToken, analyze]);
+    analyze(defaultSymbol, market, apiKey || undefined, finnhubKey || undefined);
+  }, [market, mktConfig, fetchWatchlist, apiKey, finnhubKey, analyze]);
 
   // Auto-refresh live quote + watchlist every 15 s so prices stay current
   useEffect(() => {
@@ -60,66 +55,24 @@ export default function App() {
     const tick = () => {
       const m = marketRef.current;
       const s = symbolRef.current;
-      const ut = upstoxRef.current;
       const fk = finnhubRef.current;
       const cfg = MARKETS.find(mk => mk.id === m)!;
       // Refresh watchlist quotes
-      fetchWatchlist(cfg.watchlist, m, ut || undefined, fk || undefined);
+      fetchWatchlist(cfg.watchlist, m, fk || undefined);
       // Refresh the active stock's live quote + chart last bar
-      if (s) refreshQuote(s, m, ut || undefined, fk || undefined);
+      if (s) refreshQuote(s, m, fk || undefined);
     };
     const id = setInterval(tick, REFRESH_MS);
     return () => clearInterval(id);
   }, [fetchWatchlist, refreshQuote]);
 
-  // Handle Upstox OAuth callback: exchange ?code= for access token
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    const code = url.searchParams.get('code');
-    if (!code) return;
-
-    // Clean the URL immediately
-    window.history.replaceState({}, '', '/');
-
-    setUpstoxLoading(true);
-    fetch('/api/upstox/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code }),
-    })
-      .then(r => r.json())
-      .then(data => {
-        if (data.access_token) {
-          setUpstoxToken(data.access_token);
-          sessionStorage.setItem('upstox_token', data.access_token);
-          // Auto-switch to Indian market
-          if (market === 'US') setMarket('NSE');
-        } else {
-          console.error('[Upstox] Token exchange failed:', data);
-          alert('Upstox login failed: ' + (data.error || data.message || JSON.stringify(data)));
-        }
-      })
-      .catch(err => {
-        console.error('[Upstox] Token exchange error:', err);
-        alert('Upstox login failed: ' + err.message);
-      })
-      .finally(() => setUpstoxLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleUpstoxLogin = useCallback(() => {
-    const port = window.location.port || '3000';
-    const redirectUri = encodeURIComponent(`http://localhost:${port}/callback`);
-    window.location.href = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${UPSTOX_CLIENT_ID}&redirect_uri=${redirectUri}`;
-  }, []);
-
   const handleAnalyze = () => {
-    if (symbol.trim()) analyze(symbol.trim(), market, apiKey || undefined, upstoxToken || undefined, finnhubKey || undefined);
+    if (symbol.trim()) analyze(symbol.trim(), market, apiKey || undefined, finnhubKey || undefined);
   };
 
   const handleWatchlistSelect = (s: string) => {
     setSymbol(s);
-    analyze(s, market, apiKey || undefined, upstoxToken || undefined, finnhubKey || undefined);
+    analyze(s, market, apiKey || undefined, finnhubKey || undefined);
   };
 
   const handleMarketChange = (m: Market) => {
@@ -127,9 +80,9 @@ export default function App() {
   };
 
   const handleManualRefresh = useCallback(() => {
-    fetchWatchlist(mktConfig.watchlist, market, upstoxToken || undefined, finnhubKey || undefined);
-    if (symbol) refreshQuote(symbol, market, upstoxToken || undefined, finnhubKey || undefined);
-  }, [fetchWatchlist, refreshQuote, mktConfig, market, symbol, upstoxToken, finnhubKey]);
+    fetchWatchlist(mktConfig.watchlist, market, finnhubKey || undefined);
+    if (symbol) refreshQuote(symbol, market, finnhubKey || undefined);
+  }, [fetchWatchlist, refreshQuote, mktConfig, market, symbol, finnhubKey]);
 
   // Compute Seeking Alpha-style data whenever fundamentals/stockData/signal change
   const saData = useMemo(() => {
@@ -141,16 +94,11 @@ export default function App() {
     <div className="app">
       <Header
         symbol={symbol}
-        upstoxToken={upstoxToken}
-        upstoxLoading={upstoxLoading}
         loading={loading}
         market={market}
         liveQuote={liveQuote}
         hasApiKey={!!apiKey}
-        hasUpstoxClientId={!!UPSTOX_CLIENT_ID}
         onSymbolChange={setSymbol}
-        onUpstoxLogin={handleUpstoxLogin}
-        onUpstoxLogout={() => { setUpstoxToken(''); sessionStorage.removeItem('upstox_token'); }}
         onMarketChange={handleMarketChange}
         onAnalyze={handleAnalyze}
       />
@@ -178,7 +126,7 @@ export default function App() {
                 <span className="ds-text">
                   <b>US market</b> uses Finnhub for live prices (chart history is simulated).
                   <b>NSE/BSE</b> markets fetch <b>live prices</b> from a free API.
-                  Add an <b>Upstox Analytics Token</b> for <b>real historical charts</b> (up to 10 years of daily OHLC data!).
+                  All markets use <b>Yahoo Finance</b> for <b>real historical charts</b> and live data.
                 </span>
               </div>
               <div className="feature-grid">
