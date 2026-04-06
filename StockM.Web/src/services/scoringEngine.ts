@@ -361,12 +361,28 @@ export function generateSignal(symbol: string, quotes: StockQuote[], params: Ris
   const mode: TradingMode = finalScore >= params.riskControlThreshold ? 'RiskControl' : 'Normal';
   const signal = scoreToSignal(finalScore);
 
-  const slPct = last.close * (1 - params.stopLossPercent);
-  const slCandle = last.low - snapshot.atr * 0.5;
-  const stopLoss = Math.min(slPct, slCandle);
-  const tpPct = last.close * (1 + params.takeProfitPercent);
-  const recentHigh = Math.max(...quotes.slice(-20).map(q => q.high));
-  const takeProfit = Math.max(tpPct, recentHigh);
+  const isBearish = signal === 'Sell' || signal === 'StrongSell';
+
+  let stopLoss: number;
+  let takeProfit: number;
+
+  if (isBearish) {
+    // Short trade: stop above entry, target below entry
+    const slPct = last.close * (1 + params.stopLossPercent);
+    const slCandle = last.high + snapshot.atr * 0.5;
+    stopLoss = Math.max(slPct, slCandle);
+    const tpPct = last.close * (1 - params.takeProfitPercent);
+    const recentLow = Math.min(...quotes.slice(-20).map(q => q.low));
+    takeProfit = Math.min(tpPct, recentLow);
+  } else {
+    // Long trade: stop below entry, target above entry
+    const slPct = last.close * (1 - params.stopLossPercent);
+    const slCandle = last.low - snapshot.atr * 0.5;
+    stopLoss = Math.min(slPct, slCandle);
+    const tpPct = last.close * (1 + params.takeProfitPercent);
+    const recentHigh = Math.max(...quotes.slice(-20).map(q => q.high));
+    takeProfit = Math.max(tpPct, recentHigh);
+  }
 
   let posSize = params.maxPositionSizePct;
   let volAdj = false;
