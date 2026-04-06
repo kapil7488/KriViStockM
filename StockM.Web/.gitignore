@@ -1,0 +1,19 @@
+# dependencies
+node_modules/
+
+# env files with secrets
+.env
+.env.local
+.env.*.local
+
+# build output
+dist/
+.vercel/
+
+# editor
+.vscode/mcp.json
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store

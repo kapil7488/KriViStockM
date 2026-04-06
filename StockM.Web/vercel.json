@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "tsc && vite build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/api/yahoo/:path*",       "destination": "/api/yahoo/:path*" },
+    { "source": "/api/yahoo2/:path*",      "destination": "/api/yahoo2/:path*" },
+    { "source": "/api/fc/:path*",          "destination": "/api/fc/:path*" },
+    { "source": "/api/finnhub/:path*",     "destination": "/api/finnhub/:path*" },
+    { "source": "/api/alphavantage/:path*","destination": "/api/alphavantage/:path*" },
+    { "source": "/api/upstox/token",       "destination": "/api/upstox/token" },
+    { "source": "/(.*)",                   "destination": "/index.html" }
+  ]
+}
