@@ -1,15 +1,18 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "tsc && vite build",
-  "outputDirectory": "dist",
   "framework": "vite",
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/**": { "memory": 256 }
+  },
   "rewrites": [
-    { "source": "/api/yahoo/:path*",       "destination": "/api/yahoo/:path*" },
-    { "source": "/api/yahoo2/:path*",      "destination": "/api/yahoo2/:path*" },
-    { "source": "/api/fc/:path*",          "destination": "/api/fc/:path*" },
-    { "source": "/api/finnhub/:path*",     "destination": "/api/finnhub/:path*" },
-    { "source": "/api/alphavantage/:path*","destination": "/api/alphavantage/:path*" },
-    { "source": "/api/upstox/token",       "destination": "/api/upstox/token" },
-    { "source": "/(.*)",                   "destination": "/index.html" }
+    { "source": "/api/yahoo2/(.*)", "destination": "/api/yahoo2" },
+    { "source": "/api/yahoo/(.*)",  "destination": "/api/yahoo" },
+    { "source": "/api/fc/(.*)",     "destination": "/api/fc" },
+    { "source": "/api/fc",          "destination": "/api/fc" },
+    { "source": "/api/finnhub/(.*)", "destination": "/api/finnhub" },
+    { "source": "/api/alphavantage/(.*)", "destination": "/api/alphavantage" },
+    { "source": "/api/upstox/token", "destination": "/api/upstox-token" }
   ]
 }
