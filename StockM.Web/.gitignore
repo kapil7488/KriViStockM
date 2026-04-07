@@ -10,6 +10,16 @@ node_modules/
 dist/
 .vercel/
 
+# Android build artifacts (keep source, ignore outputs)
+android/app/build/
+android/.gradle/
+android/build/
+android/capacitor-cordova-android-plugins/build/
+android/.idea/
+android/local.properties
+*.apk
+*.aab
+
 # editor
 .vscode/mcp.json
 
