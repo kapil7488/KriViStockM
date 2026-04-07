@@ -9,6 +9,47 @@ const YAHOO2_URL = `${API_BASE}/api/yahoo2`;
 const FC_URL = `${API_BASE}/api/fc`;
 const FINNHUB_URL = `${API_BASE}/api/finnhub/api/v1`;
 
+// ===================== INDEX SYMBOL MAP =====================
+// Maps user-friendly index names to Yahoo Finance tickers.
+// These tickers do NOT get .NS/.BO appended — they are used as-is.
+const INDEX_SYMBOL_MAP: Record<string, string> = {
+  'NIFTY': '^NSEI',
+  'NIFTY 50': '^NSEI',
+  'NIFTY50': '^NSEI',
+  'SENSEX': '^BSESN',
+  'BSE SENSEX': '^BSESN',
+  'BANKNIFTY': '^NSEBANK',
+  'BANK NIFTY': '^NSEBANK',
+  'NIFTY BANK': '^NSEBANK',
+  'NIFTY IT': '^CNXIT',
+  'NIFTYIT': '^CNXIT',
+  'NIFTY MIDCAP': 'NIFTY_MIDCAP_100.NS',
+  // US indices
+  'SPX': '^GSPC',
+  'S&P 500': '^GSPC',
+  'SP500': '^GSPC',
+  'DOW': '^DJI',
+  'DJI': '^DJI',
+  'NASDAQ': '^IXIC',
+  'COMP': '^IXIC',
+  'VIX': '^VIX',
+  'RUSSELL': '^RUT',
+};
+
+/** Resolve a user-typed symbol to the correct Yahoo Finance ticker. */
+function resolveYahooTicker(symbol: string, market?: Market): string {
+  const upper = symbol.toUpperCase().trim();
+  // Check index map first (indices use special tickers, no suffix)
+  const indexTicker = INDEX_SYMBOL_MAP[upper];
+  if (indexTicker) return indexTicker;
+  // Already has a suffix (e.g. RELIANCE.NS)
+  if (symbol.includes('.') || symbol.startsWith('^')) return symbol;
+  // Append market suffix
+  if (market === 'NSE') return `${symbol}.NS`;
+  if (market === 'BSE') return `${symbol}.BO`;
+  return symbol;
+}
+
 // ===================== YAHOO CRUMB/SESSION =====================
 // Yahoo Finance v10 quoteSummary requires a crumb + cookie pair.
 // We obtain them once per session and cache for reuse.
@@ -54,9 +95,7 @@ export async function fetchYahooFundamentals(symbol: string, market?: Market): P
   await ensureYahooCrumb();
   if (!_yahooCrumb) throw new Error('No Yahoo crumb available');
 
-  let ticker = symbol;
-  if (market === 'NSE') ticker = symbol.includes('.') ? symbol : `${symbol}.NS`;
-  else if (market === 'BSE') ticker = symbol.includes('.') ? symbol : `${symbol}.BO`;
+  const ticker = resolveYahooTicker(symbol, market);
 
   const modules = 'price,summaryDetail,defaultKeyStatistics,financialData,recommendationTrend,calendarEvents';
   const url = `${YAHOO2_URL}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${modules}&crumb=${encodeURIComponent(_yahooCrumb)}`;
@@ -500,8 +539,7 @@ function round(n: number): number {
 // ===================== INDIAN MARKET API (NSE/BSE) =====================
 
 export async function fetchIndianStockQuote(symbol: string, market: Market = 'NSE'): Promise<LiveQuote> {
-  const suffix = market === 'BSE' ? '.BO' : '.NS';
-  const ticker = symbol.includes('.') ? symbol : `${symbol}${suffix}`;
+  const ticker = resolveYahooTicker(symbol, market);
   const url = `${YAHOO_URL}/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
 
   const res = await fetch(url);
@@ -657,9 +695,7 @@ export async function fetchFinnhubQuote(symbol: string, token: string): Promise<
  * Returns up to ~2 years of daily bars — sufficient for all indicators (200-day SMA, etc.).
  */
 export async function fetchYahooHistorical(symbol: string, market?: Market): Promise<StockBar> {
-  let ticker = symbol;
-  if (market === 'NSE') ticker = `${symbol}.NS`;
-  else if (market === 'BSE') ticker = `${symbol}.BO`;
+  const ticker = resolveYahooTicker(symbol, market);
 
   const url = `${YAHOO_URL}/${encodeURIComponent(ticker)}?interval=1d&range=2y`;
   const res = await fetch(url);
@@ -746,9 +782,7 @@ export async function fetchYahooIntraday(
   const params = pickIntradayParams(interval, rangeDays);
   if (!params) throw new Error(`No intraday mapping for ${interval}/${rangeDays}`);
 
-  let ticker = symbol;
-  if (market === 'NSE') ticker = symbol.includes('.') ? symbol : `${symbol}.NS`;
-  else if (market === 'BSE') ticker = symbol.includes('.') ? symbol : `${symbol}.BO`;
+  const ticker = resolveYahooTicker(symbol, market);
 
   const url = `${YAHOO_URL}/${encodeURIComponent(ticker)}?interval=${params.interval}&range=${params.range}`;
   const res = await fetch(url);
