@@ -9,7 +9,7 @@ import { QuantRatingPanel } from './components/QuantRatingPanel';
 import { GuidePanel } from './components/GuidePanel';
 import { PaperTradingPanel } from './components/PaperTradingPanel';
 import { TopPicksPanel } from './components/TopPicksPanel';
-import { VwapScreener } from './components/VwapScreener';
+import { IndicatorScreener } from './components/IndicatorScreener';
 import { InsightsPanel } from './components/InsightsPanel';
 import { useStockData } from './hooks/useStockData';
 import { computeSAStyleData } from './services/quantScoring';
@@ -202,7 +202,7 @@ export default function App() {
             </button>
             <button className={`sidebar-tab ${activeTab === 'vwap' ? 'active' : ''}`}
               onClick={() => setActiveTab('vwap')}>
-              📏 VWAP
+              � Screener
             </button>
             <button className={`sidebar-tab ${activeTab === 'guide' ? 'active' : ''}`}
               onClick={() => setActiveTab('guide')}>
@@ -284,7 +284,7 @@ export default function App() {
           )}
 
           {activeTab === 'vwap' && (
-            <VwapScreener
+            <IndicatorScreener
               market={market}
               currency={mktConfig.currency}
               onSelectSymbol={handleWatchlistSelect}
