@@ -369,9 +369,71 @@ export function IndicatorScreener({ market, currency, onSelectSymbol }: Indicato
     return Math.abs(b.dayChange) - Math.abs(a.dayChange);
   }).slice(0, limit);
 
+  // ── Summary stats ──
+  const bullishCount = results.filter(r => r.signalType === 'bullish').length;
+  const bearishCount = results.filter(r => r.signalType === 'bearish').length;
+  const neutralCount = results.filter(r => r.signalType === 'neutral').length;
+  const avgStrength = results.length > 0 ? Math.round(results.reduce((s, r) => s + r.strength, 0) / results.length) : 0;
+  const topStock = results.length > 0 ? [...results].sort((a, b) => b.strength - a.strength)[0] : null;
+  const avgChange = results.length > 0 ? results.reduce((s, r) => s + r.dayChange, 0) / results.length : 0;
+
   return (
     <div className="card is-panel">
       <h3 className="card-title">{def.emoji} Indicator Screener — {market}</h3>
+
+      {/* ── Indicator Index Tiles ── */}
+      <div className="is-index-bar">
+        {INDICATORS.map(ind => (
+          <button
+            key={ind.id}
+            className={`is-idx-tile ${indicator === ind.id ? 'active' : ''}`}
+            onClick={() => { setIndicator(ind.id); setResults([]); }}
+            disabled={scanning}
+            title={ind.description}
+          >
+            <span className="is-idx-emoji">{ind.emoji}</span>
+            <span className="is-idx-label">{ind.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Analysis Summary Cards ── */}
+      {results.length > 0 && !scanning && (
+        <div className="is-summary-grid">
+          <div className="is-sum-card">
+            <span className="is-sum-value">{results.length}</span>
+            <span className="is-sum-label">Scanned</span>
+          </div>
+          <div className="is-sum-card bullish">
+            <span className="is-sum-value">{bullishCount}</span>
+            <span className="is-sum-label">🟢 Bullish ({results.length > 0 ? Math.round(bullishCount / results.length * 100) : 0}%)</span>
+          </div>
+          <div className="is-sum-card bearish">
+            <span className="is-sum-value">{bearishCount}</span>
+            <span className="is-sum-label">🔴 Bearish ({results.length > 0 ? Math.round(bearishCount / results.length * 100) : 0}%)</span>
+          </div>
+          <div className="is-sum-card neutral">
+            <span className="is-sum-value">{neutralCount}</span>
+            <span className="is-sum-label">⚪ Neutral</span>
+          </div>
+          <div className="is-sum-card">
+            <span className="is-sum-value">{avgStrength}</span>
+            <span className="is-sum-label">Avg Strength</span>
+          </div>
+          <div className="is-sum-card">
+            <span className={`is-sum-value ${avgChange >= 0 ? 'up' : 'down'}`}>
+              {avgChange >= 0 ? '+' : ''}{avgChange.toFixed(2)}%
+            </span>
+            <span className="is-sum-label">Avg Change</span>
+          </div>
+          {topStock && (
+            <div className="is-sum-card top-pick" onClick={() => onSelectSymbol(topStock.symbol)}>
+              <span className="is-sum-value">{topStock.symbol}</span>
+              <span className="is-sum-label">⭐ Top Signal ({topStock.strength})</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Indicator Dropdown */}
       <div className="is-controls">

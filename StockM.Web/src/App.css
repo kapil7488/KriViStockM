@@ -837,6 +837,52 @@ body {
 
 /* ======================== INDICATOR SCREENER ======================== */
 .is-panel { padding: 12px !important; }
+
+/* ── Index Tiles (top navigation) ── */
+.is-index-bar {
+  display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px;
+  padding: 6px 0; border-bottom: 1px solid var(--border);
+}
+.is-idx-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 4px 8px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg-card); cursor: pointer; transition: all .15s;
+  min-width: 48px;
+}
+.is-idx-tile:hover:not(:disabled) { border-color: var(--accent); background: rgba(59,130,246,.06); }
+.is-idx-tile.active { border-color: var(--accent); background: var(--accent); }
+.is-idx-tile.active .is-idx-label { color: #fff; }
+.is-idx-tile:disabled { opacity: .5; cursor: not-allowed; }
+.is-idx-emoji { font-size: 14px; line-height: 1; }
+.is-idx-label { font-size: 8px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .3px; white-space: nowrap; }
+
+/* ── Summary Cards ── */
+.is-summary-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+  gap: 6px; margin-bottom: 10px; padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.is-sum-card {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 4px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg-card); transition: all .15s;
+}
+.is-sum-card.bullish { border-color: #22c55e44; background: #22c55e0a; }
+.is-sum-card.bearish { border-color: #ef444444; background: #ef44440a; }
+.is-sum-card.neutral { border-color: #8b5cf644; background: #8b5cf60a; }
+.is-sum-card.top-pick { border-color: #f59e0b44; background: #f59e0b0a; cursor: pointer; }
+.is-sum-card.top-pick:hover { border-color: #f59e0b; }
+.is-sum-value {
+  font-size: 16px; font-weight: 800; color: var(--text-primary);
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+}
+.is-sum-value.up { color: var(--accent-green); }
+.is-sum-value.down { color: var(--accent-red); }
+.is-sum-label {
+  font-size: 8px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .3px; text-align: center; line-height: 1.2;
+}
+
 .is-controls { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
 .is-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .is-label { font-size: 10px; font-weight: 700; color: var(--text-muted); min-width: 56px; text-transform: uppercase; letter-spacing: .3px; }
