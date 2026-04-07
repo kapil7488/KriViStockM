@@ -1,0 +1,19 @@
+{
+  "name": "StockM — Algorithmic Stock Picker",
+  "short_name": "StockM",
+  "description": "Real-time algorithmic stock analysis with ML ensemble scoring",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["finance", "business"]
+}

@@ -351,9 +351,20 @@ export interface StockNewsItem {
   relatedTickers: string[];
 }
 
+export interface AllTimeData {
+  allTimeHigh: number;
+  allTimeHighDate: string;
+  allTimeLow: number;
+  allTimeLowDate: string;
+}
+
 export interface KeyStats {
   fiftyTwoWeekHigh: number;
   fiftyTwoWeekLow: number;
+  allTimeHigh: number;
+  allTimeHighDate: string;
+  allTimeLow: number;
+  allTimeLowDate: string;
   dayHigh: number;
   dayLow: number;
   previousClose: number;

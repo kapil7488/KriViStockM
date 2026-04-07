@@ -1147,14 +1147,192 @@ body {
   .right-panel > * { flex: 1; min-width: 300px; }
   .sa-kv-grid { grid-template-columns: 1fr; }
 }
+
+/* ======================== MOBILE / PWA ======================== */
 @media (max-width: 768px) {
-  .header { flex-direction: column; gap: 8px; }
-  .signal-bar { flex-direction: column; }
-  .chart-ohlc { display: none; }
-  .feature-grid { grid-template-columns: 1fr; }
-  .right-panel { flex-direction: column; }
+  /* Safe area for notch phones */
+  .app {
+    padding-top: env(safe-area-inset-top, 0);
+    padding-bottom: calc(60px + env(safe-area-inset-bottom, 0));
+  }
+
+  /* Compact header */
+  .header {
+    flex-direction: column; gap: 6px; padding: 8px 12px;
+    position: sticky; top: 0; z-index: 100;
+    background: var(--bg-secondary);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+  .header-left { gap: 6px; }
+  .header-left .logo { font-size: 22px; }
+  .header-title { font-size: 16px; }
+  .header-subtitle { font-size: 9px; }
+  .header-center { gap: 6px; width: 100%; justify-content: center; }
+  .symbol-input { width: 100px; font-size: 13px; padding: 6px 10px; }
+  .btn-primary { padding: 6px 14px; font-size: 12px; }
+  .market-btn { padding: 4px 8px; font-size: 10px; }
+  .live-badge { padding: 3px 8px; font-size: 11px; }
+  .header-right { display: none; }
+
+  /* Scrollable watchlist */
+  .watchlist {
+    flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    padding: 6px 12px; gap: 4px; scroll-snap-type: x mandatory;
+  }
+  .watchlist::-webkit-scrollbar { display: none; }
+  .watchlist-btn {
+    flex-shrink: 0; scroll-snap-align: start;
+    padding: 4px 10px; font-size: 10px;
+  }
+
+  /* Stack layout */
+  .main-content {
+    flex-direction: column; padding: 6px 8px; gap: 6px;
+    overflow-y: auto; -webkit-overflow-scrolling: touch;
+  }
+  .left-panel { gap: 6px; }
+  .right-panel {
+    width: 100%; max-height: none; overflow-y: visible;
+    flex-direction: column;
+  }
   .right-panel > * { min-width: 0; }
-  .sa-ws-meta { padding: 0; }
+
+  /* Hide desktop sidebar tabs — mobile bottom nav replaces them */
+  .sidebar-tabs { display: none; }
+
+  /* Cards */
+  .card { padding: 12px; border-radius: 8px; }
+  .card-title { font-size: 13px; margin-bottom: 8px; }
+
+  /* Chart */
+  .chart-container { border-radius: 8px; }
+  .chart-price-header { padding: 8px 10px; flex-wrap: wrap; gap: 4px; }
+  .chart-symbol { font-size: 14px; }
+  .chart-price { font-size: 18px; }
+  .chart-change { font-size: 12px; }
+  .chart-ohlc { display: none; }
+  .chart-toolbar {
+    padding: 4px 8px; gap: 2px;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+  }
+  .chart-toolbar::-webkit-scrollbar { display: none; }
+  .toolbar-btn { padding: 4px 6px; font-size: 10px; }
+  .toolbar-divider { margin: 0 3px; }
+
+  /* Signal bar */
+  .signal-bar { padding: 10px 12px; flex-direction: column; }
+  .signal-items-row { gap: 6px; }
+  .signal-value { font-size: 15px; }
+  .model-breakdown { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+
+  /* Empty card */
+  .empty-card { min-height: 300px; padding: 20px 16px; }
+  .empty-icon { font-size: 40px; }
+  .empty-card h2 { font-size: 18px; }
+  .empty-card p { font-size: 12px; }
+  .feature-grid { grid-template-columns: 1fr; gap: 6px; }
+  .feature-card { padding: 10px 12px; font-size: 12px; }
+
+  /* Indicator sections */
+  .indicator-grid { gap: 2px; }
+  .indicator-row { font-size: 12px; }
+
+  /* Fundamental */
+  .fund-row { font-size: 12px; }
+  .fund-description { font-size: 11px; }
+  .fund-section-title { font-size: 10px; }
+
+  /* Quant panel */
   .sa-ratings-bar { height: 24px; }
+  .sa-ws-meta { padding: 0; font-size: 10px; }
   .sa-mt-header, .sa-mt-row { grid-template-columns: 60px repeat(4, 1fr); font-size: 10px; }
+  .sa-grades-grid { gap: 4px; }
+  .sa-grade-row { padding: 6px 8px; }
+  .sa-kv-grid { grid-template-columns: 1fr; }
+
+  /* Paper trading */
+  .pt-trade-controls { flex-direction: column; align-items: stretch; }
+  .pt-trade-header { flex-wrap: wrap; gap: 6px; }
+
+  /* Screener */
+  .is-header-row, .is-data-row {
+    grid-template-columns: 16px minmax(50px, auto) 52px 44px 44px minmax(60px, 1fr) 44px 40px;
+    gap: 1px; font-size: 10px;
+  }
+  .is-sum-value { font-size: 14px; }
+  .is-sum-label { font-size: 7px; }
+
+  /* Top picks */
+  .tp-results-header, .tp-result-row {
+    grid-template-columns: 16px 44px 1fr 44px 52px 44px;
+    gap: 1px; font-size: 10px;
+  }
+
+  /* Stats grid */
+  .stats-grid { grid-template-columns: 1fr 1fr; gap: 1px; }
+  .stat-item { padding: 6px 8px; }
+  .stat-label { font-size: 9px; }
+  .stat-value { font-size: 10px; }
+
+  /* Range sliders */
+  .range-val { font-size: 9px; min-width: 44px; }
+
+  /* Insights */
+  .insights-section-title { font-size: 12px; }
+
+  /* Footer - hide on mobile (bottom nav replaces it) */
+  .footer { display: none; }
+
+  /* Guide panel */
+  .guide-section h4 { font-size: 13px; }
+  .guide-steps { font-size: 12px; }
+  .criteria-card { font-size: 11px; }
+
+  /* Loading overlay */
+  .loading-content p { font-size: 14px; }
+
+  /* News */
+  .news-thumb { width: 48px; height: 36px; }
+  .news-title { font-size: 10px; }
+
+  /* Peers */
+  .peer-row { padding: 6px 0; }
+  .peer-header-row { font-size: 8px; }
+}
+
+/* ======================== BOTTOM NAVIGATION (Mobile) ======================== */
+.mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-bottom-nav {
+    display: flex;
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
+    padding: 4px 0 calc(4px + env(safe-area-inset-bottom, 0));
+    z-index: 200;
+    justify-content: space-around;
+    align-items: stretch;
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    background: rgba(30, 41, 59, 0.92);
+  }
+
+  .mobile-nav-btn {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 1px;
+    background: none; border: none; color: var(--text-muted);
+    font-size: 9px; font-weight: 600; padding: 4px 2px;
+    cursor: pointer; transition: color 0.15s;
+    flex: 1; min-width: 0;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .mobile-nav-btn .nav-icon { font-size: 18px; line-height: 1; }
+  .mobile-nav-btn.active { color: var(--accent-blue); }
+  .mobile-nav-btn:active { transform: scale(0.92); }
 }

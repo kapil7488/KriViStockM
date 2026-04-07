@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { StockNewsItem, LiveQuote, FundamentalData, SAStyleData, Market } from '../types';
+import { StockNewsItem, LiveQuote, FundamentalData, SAStyleData, Market, AllTimeData } from '../types';
 import { fetchStockNews, buildKeyStats } from '../services/stockApi';
 
 interface InsightsPanelProps {
@@ -11,10 +11,11 @@ interface InsightsPanelProps {
   market: Market;
   watchlistQuotes: LiveQuote[];
   onSelectSymbol: (s: string) => void;
+  allTimeData?: AllTimeData | null;
 }
 
 export function InsightsPanel({
-  symbol, liveQuote, fundamentals, saData, currency, market: _market, watchlistQuotes, onSelectSymbol,
+  symbol, liveQuote, fundamentals, saData, currency, market: _market, watchlistQuotes, onSelectSymbol, allTimeData,
 }: InsightsPanelProps) {
   const [news, setNews] = useState<StockNewsItem[]>([]);
   const [newsLoading, setNewsLoading] = useState(false);
@@ -30,7 +31,7 @@ export function InsightsPanel({
       .finally(() => { if (fetchId.current === id) setNewsLoading(false); });
   }, [symbol]);
 
-  const stats = buildKeyStats(liveQuote, fundamentals, saData);
+  const stats = buildKeyStats(liveQuote, fundamentals, saData, allTimeData);
   const price = liveQuote?.lastPrice || 0;
 
   // Range slider position helpers
@@ -68,6 +69,25 @@ export function InsightsPanel({
         <h3 className="insights-section-title">Key Statistics</h3>
 
         {/* Range Sliders */}
+        {stats.allTimeHigh > 0 && (
+          <div className="range-stat">
+            <div className="range-header">
+              <span className="range-label">All-Time Range</span>
+              <span className="range-label" style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                ATH: {stats.allTimeHighDate} · ATL: {stats.allTimeLowDate}
+              </span>
+            </div>
+            <div className="range-bar-wrap">
+              <span className="range-val">{currency}{fmtNum(stats.allTimeLow)}</span>
+              <div className="range-bar">
+                <div className="range-fill" style={{ width: `${Math.max(2, Math.min(98, stats.allTimeHigh > stats.allTimeLow ? ((price - stats.allTimeLow) / (stats.allTimeHigh - stats.allTimeLow)) * 100 : 50))}%` }} />
+                <div className="range-thumb" style={{ left: `${Math.max(2, Math.min(98, stats.allTimeHigh > stats.allTimeLow ? ((price - stats.allTimeLow) / (stats.allTimeHigh - stats.allTimeLow)) * 100 : 50))}%` }} />
+              </div>
+              <span className="range-val">{currency}{fmtNum(stats.allTimeHigh)}</span>
+            </div>
+          </div>
+        )}
+
         <div className="range-stat">
           <div className="range-header">
             <span className="range-label">52 Week Range</span>
@@ -98,6 +118,18 @@ export function InsightsPanel({
 
         {/* Stats Grid */}
         <div className="stats-grid">
+          {stats.allTimeHigh > 0 && (
+            <div className="stat-item">
+              <span className="stat-label">All-Time High</span>
+              <span className="stat-value" style={{ color: 'var(--accent-green)' }}>{currency}{fmtNum(stats.allTimeHigh)}</span>
+            </div>
+          )}
+          {stats.allTimeLow > 0 && (
+            <div className="stat-item">
+              <span className="stat-label">All-Time Low</span>
+              <span className="stat-value" style={{ color: 'var(--accent-red)' }}>{currency}{fmtNum(stats.allTimeLow)}</span>
+            </div>
+          )}
           <div className="stat-item">
             <span className="stat-label">EPS (FWD)</span>
             <span className="stat-value">{fmtNum(stats.eps)}</span>

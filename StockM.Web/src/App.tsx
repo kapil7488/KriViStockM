@@ -29,7 +29,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<SidebarTab>('insights');
   const {
     loading, error, stockData, signal, risk, fundamentals,
-    liveQuote, watchlistQuotes, signalHistory, dataSource,
+    liveQuote, watchlistQuotes, signalHistory, dataSource, allTimeData,
     analyze, fetchWatchlist, refreshQuote, lastRefreshed,
   } = useStockData();
 
@@ -220,6 +220,7 @@ export default function App() {
               market={market}
               watchlistQuotes={watchlistQuotes}
               onSelectSymbol={handleWatchlistSelect}
+              allTimeData={allTimeData}
             />
           )}
 
@@ -324,6 +325,34 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Mobile Bottom Navigation */}
+      <nav className="mobile-bottom-nav">
+        <button className={`mobile-nav-btn ${activeTab === 'insights' ? 'active' : ''}`} onClick={() => setActiveTab('insights')}>
+          <span className="nav-icon">📰</span>
+          <span>Insights</span>
+        </button>
+        <button className={`mobile-nav-btn ${activeTab === 'technical' ? 'active' : ''}`} onClick={() => setActiveTab('technical')}>
+          <span className="nav-icon">📊</span>
+          <span>Technical</span>
+        </button>
+        <button className={`mobile-nav-btn ${activeTab === 'quant' ? 'active' : ''}`} onClick={() => setActiveTab('quant')}>
+          <span className="nav-icon">🔬</span>
+          <span>Quant</span>
+        </button>
+        <button className={`mobile-nav-btn ${activeTab === 'trade' ? 'active' : ''}`} onClick={() => setActiveTab('trade')}>
+          <span className="nav-icon">💰</span>
+          <span>Trade</span>
+        </button>
+        <button className={`mobile-nav-btn ${activeTab === 'picks' ? 'active' : ''}`} onClick={() => setActiveTab('picks')}>
+          <span className="nav-icon">🔥</span>
+          <span>Picks</span>
+        </button>
+        <button className={`mobile-nav-btn ${activeTab === 'vwap' ? 'active' : ''}`} onClick={() => setActiveTab('vwap')}>
+          <span className="nav-icon">📡</span>
+          <span>Scan</span>
+        </button>
+      </nav>
     </div>
   );
 }

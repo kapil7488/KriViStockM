@@ -1,13 +1,13 @@
 import { useState, useCallback } from 'react';
 import {
   StockBar, StockSignal, RiskAssessment, RiskParameters, FundamentalData, LiveQuote,
-  Market, DEFAULT_RISK_PARAMS,
+  Market, DEFAULT_RISK_PARAMS, AllTimeData,
 } from '../types';
 import {
   generateSampleData, fetchDailyData, generateFundamentals,
   fetchIndianStockQuote, fetchIndianMultipleQuotes, fundamentalsFromLiveQuote,
   fetchFinnhubQuote, fetchFinnhubMetrics, buildFinnhubFundamentals,
-  fetchYahooQuote, fetchYahooHistorical, fetchYahooFundamentals,
+  fetchYahooQuote, fetchYahooHistorical, fetchYahooFundamentals, fetchAllTimeData,
 } from '../services/stockApi';
 import { generateSignal } from '../services/scoringEngine';
 import { evaluateRisk } from '../services/riskManager';
@@ -25,6 +25,7 @@ interface UseStockDataReturn {
   watchlistQuotes: LiveQuote[];
   signalHistory: StockSignal[];
   dataSource: DataSource;
+  allTimeData: AllTimeData | null;
   analyze: (symbol: string, market: Market, apiKey?: string, finnhubKey?: string) => Promise<void>;
   fetchWatchlist: (symbols: string[], market: Market, finnhubKey?: string) => Promise<void>;
   refreshQuote: (symbol: string, market: Market, finnhubKey?: string) => Promise<void>;
@@ -43,6 +44,7 @@ export function useStockData(): UseStockDataReturn {
   const [watchlistQuotes, setWatchlistQuotes] = useState<LiveQuote[]>([]);
   const [signalHistory, setSignalHistory] = useState<StockSignal[]>([]);
   const [dataSource, setDataSource] = useState<DataSource>('simulated');
+  const [allTimeData, setAllTimeData] = useState<AllTimeData | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<number>(Date.now());
   const riskParams = DEFAULT_RISK_PARAMS;
 
@@ -172,6 +174,11 @@ export function useStockData(): UseStockDataReturn {
       }
 
       setSignalHistory(prev => [sig, ...prev].slice(0, 50));
+
+      // Fetch all-time high/low data (non-blocking)
+      fetchAllTimeData(symbol, market)
+        .then(atd => setAllTimeData(atd))
+        .catch(() => setAllTimeData(null));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -270,7 +277,7 @@ export function useStockData(): UseStockDataReturn {
 
   return {
     loading, error, stockData, signal, risk, fundamentals,
-    liveQuote, watchlistQuotes, signalHistory, dataSource,
+    liveQuote, watchlistQuotes, signalHistory, dataSource, allTimeData,
     analyze, fetchWatchlist, refreshQuote, lastRefreshed, riskParams,
   };
 }

@@ -1,4 +1,4 @@
-import { StockBar, StockQuote, FundamentalData, LiveQuote, Market, ChartInterval, INTERVAL_MINUTES, StockNewsItem, KeyStats } from '../types';
+import { StockBar, StockQuote, FundamentalData, LiveQuote, Market, ChartInterval, INTERVAL_MINUTES, StockNewsItem, KeyStats, AllTimeData } from '../types';
 
 // API base: empty for local dev (uses Vite proxy), or a deployed backend URL in production
 const API_BASE = import.meta.env.VITE_API_BASE || '';
@@ -926,15 +926,66 @@ export async function fetchStockNews(symbol: string, count = 8): Promise<StockNe
   }
 }
 
+/**
+ * Fetch ALL-TIME historical data from Yahoo Finance (range=max) to find ATH and ATL.
+ * Returns the all-time high, all-time low, and their dates.
+ */
+export async function fetchAllTimeData(symbol: string, market?: Market): Promise<AllTimeData> {
+  const ticker = resolveYahooTicker(symbol, market);
+  const url = `${YAHOO_URL}/${encodeURIComponent(ticker)}?interval=1wk&range=max`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Yahoo alltime returned ${res.status}`);
+
+  const json = await res.json();
+  const result = json.chart?.result?.[0];
+  if (!result) throw new Error(`Yahoo: No all-time data for ${ticker}`);
+
+  const timestamps: number[] = result.timestamp || [];
+  const ohlcv = result.indicators?.quote?.[0];
+  if (!ohlcv || timestamps.length === 0) throw new Error(`Yahoo: Empty alltime for ${ticker}`);
+
+  let allTimeHigh = -Infinity;
+  let allTimeHighDate = '';
+  let allTimeLow = Infinity;
+  let allTimeLowDate = '';
+
+  for (let i = 0; i < timestamps.length; i++) {
+    const h = ohlcv.high?.[i];
+    const l = ohlcv.low?.[i];
+    if (h == null || l == null) continue;
+    const dateStr = new Date(timestamps[i] * 1000).toISOString().split('T')[0];
+    if (h > allTimeHigh) {
+      allTimeHigh = h;
+      allTimeHighDate = dateStr;
+    }
+    if (l < allTimeLow && l > 0) {
+      allTimeLow = l;
+      allTimeLowDate = dateStr;
+    }
+  }
+
+  return {
+    allTimeHigh: round(allTimeHigh === -Infinity ? 0 : allTimeHigh),
+    allTimeHighDate,
+    allTimeLow: round(allTimeLow === Infinity ? 0 : allTimeLow),
+    allTimeLowDate,
+  };
+}
+
 /** Build KeyStats from LiveQuote + FundamentalData + SAStyleData. */
 export function buildKeyStats(
   quote: LiveQuote | null,
   fundamentals: FundamentalData | null,
   saData: { quantRating: { wallStreetTarget: number; analystCount: number; wallStreetRating: string }; riskMetrics: { shortInterest: number; beta: number }; dividendInfo: { yieldFwd: number; annualPayout: number } } | null,
+  allTime?: AllTimeData | null,
 ): KeyStats {
   return {
     fiftyTwoWeekHigh: quote?.yearHigh || fundamentals?.fiftyTwoWeekHigh || 0,
     fiftyTwoWeekLow: quote?.yearLow || fundamentals?.fiftyTwoWeekLow || 0,
+    allTimeHigh: allTime?.allTimeHigh || 0,
+    allTimeHighDate: allTime?.allTimeHighDate || '',
+    allTimeLow: allTime?.allTimeLow || 0,
+    allTimeLowDate: allTime?.allTimeLowDate || '',
     dayHigh: quote?.dayHigh || 0,
     dayLow: quote?.dayLow || 0,
     previousClose: quote?.previousClose || 0,
