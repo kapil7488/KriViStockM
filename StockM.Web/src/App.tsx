@@ -9,12 +9,13 @@ import { QuantRatingPanel } from './components/QuantRatingPanel';
 import { GuidePanel } from './components/GuidePanel';
 import { PaperTradingPanel } from './components/PaperTradingPanel';
 import { TopPicksPanel } from './components/TopPicksPanel';
+import { VwapScreener } from './components/VwapScreener';
 import { InsightsPanel } from './components/InsightsPanel';
 import { useStockData } from './hooks/useStockData';
 import { computeSAStyleData } from './services/quantScoring';
 import './App.css';
 
-type SidebarTab = 'insights' | 'technical' | 'fundamental' | 'quant' | 'risk' | 'trade' | 'picks' | 'guide';
+type SidebarTab = 'insights' | 'technical' | 'fundamental' | 'quant' | 'risk' | 'trade' | 'picks' | 'vwap' | 'guide';
 
 // Read API keys from environment (set in .env, never committed to git)
 const AV_KEY = import.meta.env.VITE_AV_KEY || '';
@@ -199,6 +200,10 @@ export default function App() {
               onClick={() => setActiveTab('picks')}>
               🔥 Top Picks
             </button>
+            <button className={`sidebar-tab ${activeTab === 'vwap' ? 'active' : ''}`}
+              onClick={() => setActiveTab('vwap')}>
+              📏 VWAP
+            </button>
             <button className={`sidebar-tab ${activeTab === 'guide' ? 'active' : ''}`}
               onClick={() => setActiveTab('guide')}>
               📖 Guide
@@ -272,6 +277,14 @@ export default function App() {
 
           {activeTab === 'picks' && (
             <TopPicksPanel
+              market={market}
+              currency={mktConfig.currency}
+              onSelectSymbol={handleWatchlistSelect}
+            />
+          )}
+
+          {activeTab === 'vwap' && (
+            <VwapScreener
               market={market}
               currency={mktConfig.currency}
               onSelectSymbol={handleWatchlistSelect}
