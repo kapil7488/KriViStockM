@@ -1,30 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { VitePWA } from 'vite-plugin-pwa';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  plugins: [
-    react(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      includeAssets: ['icon-512.svg'],
-      manifest: false, // we use public/manifest.json
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/query[12]\.finance\.yahoo\.com\/.*/i,
-            handler: 'NetworkFirst',
-            options: { cacheName: 'yahoo-api', expiration: { maxEntries: 50, maxAgeSeconds: 300 } },
-          },
-        ],
-      },
-    }),
-  ],
+  plugins: [react()],
   envDir: __dirname,
   server: {
     port: 3000,

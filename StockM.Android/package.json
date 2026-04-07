@@ -1,0 +1,26 @@
+{
+  "name": "stockm-android",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Android APK wrapper for StockM web app using Capacitor",
+  "scripts": {
+    "build:web": "cd ../StockM.Web && npm run vercel-build",
+    "copy:dist": "node scripts/copy-dist.js",
+    "cap:sync": "npx cap sync android",
+    "build": "npm run build:web && npm run copy:dist && npm run cap:sync",
+    "open": "npx cap open android",
+    "run": "npm run build && npx cap run android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.3.0",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/core": "^8.3.0",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/keyboard": "^8.0.2",
+    "@capacitor/splash-screen": "^8.0.1",
+    "@capacitor/status-bar": "^8.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.3.0"
+  }
+}
