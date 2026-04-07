@@ -875,6 +875,7 @@ body {
 .is-sum-value {
   font-size: 16px; font-weight: 800; color: var(--text-primary);
   font-variant-numeric: tabular-nums; line-height: 1.1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
 }
 .is-sum-value.up { color: var(--accent-green); }
 .is-sum-value.down { color: var(--accent-red); }
@@ -906,7 +907,7 @@ body {
 .is-results { margin-bottom: 8px; overflow-x: auto; }
 .is-header-row, .is-data-row {
   display: grid;
-  grid-template-columns: 18px 52px 58px 50px 50px minmax(80px, 1fr) 56px 50px;
+  grid-template-columns: 18px minmax(62px, auto) 58px 50px 50px minmax(72px, 1fr) 50px 48px;
   gap: 2px; padding: 0 2px; align-items: center;
 }
 .is-header-row {
@@ -921,7 +922,7 @@ body {
 }
 .is-data-row:hover { background: var(--bg-hover); }
 .is-rank { font-size: 9px; color: var(--text-muted); font-weight: 700; }
-.is-sym { font-weight: 700; color: var(--text-primary); font-size: 10px; letter-spacing: -.2px; }
+.is-sym { font-weight: 700; color: var(--text-primary); font-size: 10px; letter-spacing: -.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .is-price { font-size: 10px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .is-val { font-size: 10px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 
