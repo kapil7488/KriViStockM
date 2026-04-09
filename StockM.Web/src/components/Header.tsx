@@ -22,8 +22,9 @@ export function Header({
       <div className="header-left">
         <span className="logo">📈</span>
         <div>
-          <h1 className="header-title">StockM</h1>
+          <h1 className="header-title">KriVi's StockM</h1>
           <p className="header-subtitle">Algorithmic Stock Picker — 2026 Liquidity Model</p>
+          <p className="header-signature" style={{ fontSize: '0.65rem', color: '#94a3b8', margin: 0 }}>by Krishiv</p>
         </div>
       </div>
 

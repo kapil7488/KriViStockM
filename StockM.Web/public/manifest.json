@@ -1,6 +1,6 @@
 {
-  "name": "StockM — Algorithmic Stock Picker",
-  "short_name": "StockM",
+  "name": "KriVi's StockM — Algorithmic Stock Picker",
+  "short_name": "KriVi's StockM",
   "description": "Real-time algorithmic stock analysis with ML ensemble scoring",
   "start_url": "/",
   "display": "standalone",
