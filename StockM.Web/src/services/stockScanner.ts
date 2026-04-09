@@ -14,7 +14,7 @@ export interface ScanResult {
   scannedAt: string;
 }
 
-export type ScanUniverse = 'default' | 'sp500' | 'nifty50';
+export type ScanUniverse = 'default' | 'sp500' | 'nifty50' | 'crypto50';
 
 // Broader stock universe beyond the 10-stock watchlist
 const US_SCAN_UNIVERSE = [
@@ -57,6 +57,23 @@ const NIFTY50_UNIVERSE = [
 
 // BSE uses same stocks as NSE
 
+// Top crypto by market cap — Yahoo Finance uses SYMBOL-USD format
+const CRYPTO_SCAN_UNIVERSE = [
+  'BTC-USD', 'ETH-USD', 'BNB-USD', 'SOL-USD', 'XRP-USD', 'ADA-USD', 'DOGE-USD',
+  'AVAX-USD', 'DOT-USD', 'MATIC-USD', 'SHIB-USD', 'TRX-USD', 'LINK-USD', 'UNI-USD',
+  'ATOM-USD', 'LTC-USD', 'BCH-USD', 'NEAR-USD', 'APT-USD', 'FIL-USD',
+];
+
+const CRYPTO50_UNIVERSE = [
+  ...CRYPTO_SCAN_UNIVERSE,
+  'ICP-USD', 'HBAR-USD', 'VET-USD', 'IMX-USD', 'ALGO-USD',
+  'MANA-USD', 'SAND-USD', 'AXS-USD', 'FTM-USD', 'THETA-USD',
+  'XLM-USD', 'EOS-USD', 'AAVE-USD', 'GRT-USD', 'MKR-USD',
+  'SNX-USD', 'COMP-USD', 'CRV-USD', 'LDO-USD', 'ARB-USD',
+  'OP-USD', 'SUI-USD', 'SEI-USD', 'INJ-USD', 'TIA-USD',
+  'STX-USD', 'RUNE-USD', 'PEPE-USD', 'WIF-USD', 'BONK-USD',
+];
+
 export function getScanUniverse(market: Market, universe: ScanUniverse = 'default'): string[] {
   if (market === 'US') {
     return universe === 'sp500' ? SP500_UNIVERSE : US_SCAN_UNIVERSE;
@@ -64,12 +81,18 @@ export function getScanUniverse(market: Market, universe: ScanUniverse = 'defaul
   if (market === 'NSE' || market === 'BSE') {
     return universe === 'nifty50' ? NIFTY50_UNIVERSE : NSE_SCAN_UNIVERSE;
   }
+  if (market === 'CRYPTO') {
+    return universe === 'crypto50' ? CRYPTO50_UNIVERSE : CRYPTO_SCAN_UNIVERSE;
+  }
   return US_SCAN_UNIVERSE;
 }
 
 export function getUniverseLabel(market: Market, universe: ScanUniverse): string {
   if (market === 'US') {
     return universe === 'sp500' ? 'S&P 500 (100)' : 'Popular (30)';
+  }
+  if (market === 'CRYPTO') {
+    return universe === 'crypto50' ? 'Top 50 Crypto' : 'Popular (20)';
   }
   return universe === 'nifty50' ? 'Nifty 50' : 'Popular (30)';
 }

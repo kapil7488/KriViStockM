@@ -1,7 +1,9 @@
 import { StockBar, StockQuote, FundamentalData, LiveQuote, Market, ChartInterval, INTERVAL_MINUTES, StockNewsItem, KeyStats, AllTimeData } from '../types';
 
-// API base: empty for local dev (uses Vite proxy), or a deployed backend URL in production
-const API_BASE = import.meta.env.VITE_API_BASE || '';
+// API base: empty for web (uses Vite proxy / self-hosted on Vercel),
+// but must point to Vercel backend when running inside Capacitor (Android/iOS).
+const isNative = typeof (window as any).Capacitor !== 'undefined' && (window as any).Capacitor.isNativePlatform?.();
+const API_BASE = import.meta.env.VITE_API_BASE || (isNative ? 'https://stockm-app.vercel.app' : '');
 
 const ALPHA_VANTAGE_URL = `${API_BASE}/api/alphavantage/query`;
 const YAHOO_URL = `${API_BASE}/api/yahoo/v8/finance/chart`;
@@ -44,6 +46,8 @@ function resolveYahooTicker(symbol: string, market?: Market): string {
   if (indexTicker) return indexTicker;
   // Already has a suffix (e.g. RELIANCE.NS)
   if (symbol.includes('.') || symbol.startsWith('^')) return symbol;
+  // Crypto: already has -USD or append it
+  if (market === 'CRYPTO') return symbol.includes('-') ? symbol : `${symbol}-USD`;
   // Append market suffix
   if (market === 'NSE') return `${symbol}.NS`;
   if (market === 'BSE') return `${symbol}.BO`;

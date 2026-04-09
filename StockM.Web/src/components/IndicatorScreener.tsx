@@ -287,6 +287,35 @@ function getValueLabels(indicator: IndicatorId): [string, string] {
   }
 }
 
+// ── Combo result type ──────────────────────────────────────────
+export interface ComboResult {
+  symbol: string;
+  price: number;
+  dayChange: number;
+  indicators: { id: IndicatorId; signal: string; signalType: 'bullish' | 'bearish' | 'neutral'; strength: number; detail: string }[];
+  comboScore: number;       // 0-100 avg strength
+  comboSignal: 'bullish' | 'bearish' | 'neutral';
+  agreement: number;        // % of indicators that agree on direction
+}
+
+// ── Predefined combos ─────────────────────────────────────────
+interface ComboDef {
+  id: string;
+  label: string;
+  emoji: string;
+  indicators: IndicatorId[];
+  description: string;
+}
+
+const PREDEFINED_COMBOS: ComboDef[] = [
+  { id: 'momentum', label: 'Momentum', emoji: '🚀', indicators: ['rsi', 'macd', 'stochastic'], description: 'RSI + MACD + Stochastic — triple momentum confirmation' },
+  { id: 'trend', label: 'Trend', emoji: '📈', indicators: ['sma-cross', 'ema-cross', 'macd'], description: 'SMA Cross + EMA Cross + MACD — trend alignment' },
+  { id: 'mean-rev', label: 'Mean Revert', emoji: '🔄', indicators: ['rsi', 'bollinger', 'stochastic'], description: 'RSI + BB + Stochastic — oversold / overbought confluence' },
+  { id: 'breakout', label: 'Breakout', emoji: '💥', indicators: ['bollinger', 'atr', 'vwap'], description: 'BB Squeeze + ATR expansion + VWAP cross' },
+  { id: 'swing', label: 'Swing', emoji: '🎯', indicators: ['ema-cross', 'rsi', 'vwap'], description: 'EMA Cross + RSI + VWAP — short-term swing setup' },
+  { id: 'custom', label: 'Custom', emoji: '🔧', indicators: [], description: 'Pick 2–4 indicators yourself' },
+];
+
 // ── Scan engine ────────────────────────────────────────────────
 async function scanIndicator(
   market: Market, universe: ScanUniverse, indicator: IndicatorId,
@@ -315,6 +344,58 @@ async function scanIndicator(
   return results;
 }
 
+// ── Combo scan engine ──────────────────────────────────────────
+async function scanCombo(
+  market: Market, universe: ScanUniverse, indicators: IndicatorId[],
+  onProgress: (done: number, total: number) => void,
+): Promise<ComboResult[]> {
+  const stocks = getScanUniverse(market, universe);
+  const results: ComboResult[] = [];
+  const CONCURRENCY = 4;
+  let done = 0;
+
+  for (let i = 0; i < stocks.length; i += CONCURRENCY) {
+    const batch = stocks.slice(i, i + CONCURRENCY);
+    const batchResults = await Promise.allSettled(
+      batch.map(async (sym) => {
+        const data = await fetchYahooHistorical(sym, market);
+        if (data.quotes.length < 30) return null;
+
+        const indResults: ComboResult['indicators'] = [];
+        for (const ind of indicators) {
+          const r = analyzeStock(sym, data.quotes, ind);
+          if (r) indResults.push({ id: ind, signal: r.signal, signalType: r.signalType, strength: r.strength, detail: r.detail });
+        }
+        if (indResults.length === 0) return null;
+
+        const last = data.quotes[data.quotes.length - 1];
+        const prev = data.quotes[data.quotes.length - 2];
+        const dayChange = prev ? ((last.close - prev.close) / prev.close) * 100 : 0;
+
+        // Compute combo metrics
+        const comboScore = Math.round(indResults.reduce((s, r) => s + r.strength, 0) / indResults.length);
+        const bullish = indResults.filter(r => r.signalType === 'bullish').length;
+        const bearish = indResults.filter(r => r.signalType === 'bearish').length;
+        const comboSignal: 'bullish' | 'bearish' | 'neutral' =
+          bullish > bearish ? 'bullish' : bearish > bullish ? 'bearish' : 'neutral';
+        const majority = Math.max(bullish, bearish, indResults.length - bullish - bearish);
+        const agreement = Math.round((majority / indResults.length) * 100);
+
+        return {
+          symbol: sym, price: last.close, dayChange,
+          indicators: indResults, comboScore, comboSignal, agreement,
+        } as ComboResult;
+      }),
+    );
+    for (const r of batchResults) {
+      if (r.status === 'fulfilled' && r.value) results.push(r.value);
+      done++;
+      onProgress(done, stocks.length);
+    }
+  }
+  return results;
+}
+
 // ── Component ──────────────────────────────────────────────────
 type SignalFilter = 'all' | 'bullish' | 'bearish' | 'neutral';
 type SortMode = 'strength' | 'value' | 'change';
@@ -326,8 +407,10 @@ interface IndicatorScreenerProps {
 }
 
 export function IndicatorScreener({ market, currency, onSelectSymbol }: IndicatorScreenerProps) {
+  const [mode, setMode] = useState<'single' | 'combo'>('single');
   const [indicator, setIndicator] = useState<IndicatorId>('vwap');
   const [results, setResults] = useState<ScreenerResult[]>([]);
+  const [comboResults, setComboResults] = useState<ComboResult[]>([]);
   const [scanning, setScanning] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [universe, setUniverse] = useState<ScanUniverse>('default');
@@ -335,26 +418,46 @@ export function IndicatorScreener({ market, currency, onSelectSymbol }: Indicato
   const [sortBy, setSortBy] = useState<SortMode>('strength');
   const [limit, setLimit] = useState<10 | 20 | 50>(10);
   const [lastScan, setLastScan] = useState<string | null>(null);
+  const [selectedCombo, setSelectedCombo] = useState<string>('momentum');
+  const [customPicks, setCustomPicks] = useState<IndicatorId[]>([]);
 
   const isIndian = market === 'NSE' || market === 'BSE';
+  const isCrypto = market === 'CRYPTO';
   const sym = currency === 'INR' ? '₹' : '$';
   const def = INDICATORS.find(i => i.id === indicator)!;
   const [valLabel1, valLabel2] = getValueLabels(indicator);
 
+  // Combo helpers
+  const comboDef = PREDEFINED_COMBOS.find(c => c.id === selectedCombo)!;
+  const activeComboIndicators = selectedCombo === 'custom' ? customPicks : comboDef.indicators;
+
+  const toggleCustomPick = (id: IndicatorId) => {
+    setCustomPicks(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : prev.length < 4 ? [...prev, id] : prev
+    );
+  };
+
   const handleScan = useCallback(async () => {
     setScanning(true);
     setResults([]);
+    setComboResults([]);
     setProgress({ done: 0, total: 0 });
     try {
-      const res = await scanIndicator(market, universe, indicator, (d, t) => setProgress({ done: d, total: t }));
-      setResults(res);
+      if (mode === 'single') {
+        const res = await scanIndicator(market, universe, indicator, (d, t) => setProgress({ done: d, total: t }));
+        setResults(res);
+      } else {
+        if (activeComboIndicators.length < 2) return;
+        const res = await scanCombo(market, universe, activeComboIndicators, (d, t) => setProgress({ done: d, total: t }));
+        setComboResults(res);
+      }
       setLastScan(new Date().toLocaleTimeString());
     } catch (err) {
       console.error('[Screener]', err);
     } finally {
       setScanning(false);
     }
-  }, [market, universe, indicator]);
+  }, [market, universe, indicator, mode, activeComboIndicators]);
 
   const filtered = results.filter(r => {
     if (filter === 'bullish') return r.signalType === 'bullish';
@@ -369,48 +472,153 @@ export function IndicatorScreener({ market, currency, onSelectSymbol }: Indicato
     return Math.abs(b.dayChange) - Math.abs(a.dayChange);
   }).slice(0, limit);
 
+  // Combo filtered & sorted
+  const comboFiltered = comboResults.filter(r => {
+    if (filter === 'bullish') return r.comboSignal === 'bullish';
+    if (filter === 'bearish') return r.comboSignal === 'bearish';
+    if (filter === 'neutral') return r.comboSignal === 'neutral';
+    return true;
+  });
+  const comboSorted = [...comboFiltered].sort((a, b) => {
+    if (sortBy === 'strength') return b.comboScore - a.comboScore;
+    if (sortBy === 'value') return b.agreement - a.agreement;
+    return Math.abs(b.dayChange) - Math.abs(a.dayChange);
+  }).slice(0, limit);
+
   // ── Summary stats ──
-  const bullishCount = results.filter(r => r.signalType === 'bullish').length;
-  const bearishCount = results.filter(r => r.signalType === 'bearish').length;
-  const neutralCount = results.filter(r => r.signalType === 'neutral').length;
-  const avgStrength = results.length > 0 ? Math.round(results.reduce((s, r) => s + r.strength, 0) / results.length) : 0;
+  const activeResults = mode === 'single' ? results : comboResults;
+  const bullishCount = mode === 'single'
+    ? results.filter(r => r.signalType === 'bullish').length
+    : comboResults.filter(r => r.comboSignal === 'bullish').length;
+  const bearishCount = mode === 'single'
+    ? results.filter(r => r.signalType === 'bearish').length
+    : comboResults.filter(r => r.comboSignal === 'bearish').length;
+  const neutralCount = activeResults.length - bullishCount - bearishCount;
+  const avgStrength = activeResults.length > 0
+    ? Math.round((mode === 'single'
+        ? results.reduce((s, r) => s + r.strength, 0)
+        : comboResults.reduce((s, r) => s + r.comboScore, 0)
+      ) / activeResults.length)
+    : 0;
+  const topCombo = comboResults.length > 0 ? [...comboResults].sort((a, b) => b.comboScore - a.comboScore)[0] : null;
   const topStock = results.length > 0 ? [...results].sort((a, b) => b.strength - a.strength)[0] : null;
-  const avgChange = results.length > 0 ? results.reduce((s, r) => s + r.dayChange, 0) / results.length : 0;
+  const avgChange = activeResults.length > 0
+    ? (mode === 'single'
+        ? results.reduce((s, r) => s + r.dayChange, 0)
+        : comboResults.reduce((s, r) => s + r.dayChange, 0)
+      ) / activeResults.length
+    : 0;
 
   return (
     <div className="card is-panel">
-      <h3 className="card-title">{def.emoji} Indicator Screener — {market}</h3>
+      <h3 className="card-title">🔬 Indicator Screener — {market}</h3>
 
-      {/* ── Indicator Index Tiles ── */}
-      <div className="is-index-bar">
-        {INDICATORS.map(ind => (
-          <button
-            key={ind.id}
-            className={`is-idx-tile ${indicator === ind.id ? 'active' : ''}`}
-            onClick={() => { setIndicator(ind.id); setResults([]); }}
-            disabled={scanning}
-            title={ind.description}
-          >
-            <span className="is-idx-emoji">{ind.emoji}</span>
-            <span className="is-idx-label">{ind.label}</span>
-          </button>
-        ))}
+      {/* ── Mode Toggle: Single vs Combo ── */}
+      <div className="is-mode-toggle">
+        <button className={`is-mode-btn ${mode === 'single' ? 'active' : ''}`}
+          onClick={() => { setMode('single'); setComboResults([]); }} disabled={scanning}>
+          📊 Single Indicator
+        </button>
+        <button className={`is-mode-btn ${mode === 'combo' ? 'active' : ''}`}
+          onClick={() => { setMode('combo'); setResults([]); }} disabled={scanning}>
+          🔗 Combo (2-4)
+        </button>
       </div>
 
+      {/* ── Single Mode: Indicator Index Tiles ── */}
+      {mode === 'single' && (
+        <div className="is-index-bar">
+          {INDICATORS.map(ind => (
+            <button
+              key={ind.id}
+              className={`is-idx-tile ${indicator === ind.id ? 'active' : ''}`}
+              onClick={() => { setIndicator(ind.id); setResults([]); }}
+              disabled={scanning}
+              title={ind.description}
+            >
+              <span className="is-idx-emoji">{ind.emoji}</span>
+              <span className="is-idx-label">{ind.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Combo Mode: Preset Combos + Custom Picker ── */}
+      {mode === 'combo' && (
+        <div className="is-combo-section">
+          <div className="is-combo-presets">
+            {PREDEFINED_COMBOS.map(c => (
+              <button
+                key={c.id}
+                className={`is-combo-tile ${selectedCombo === c.id ? 'active' : ''}`}
+                onClick={() => { setSelectedCombo(c.id); setComboResults([]); }}
+                disabled={scanning}
+                title={c.description}
+              >
+                <span className="is-combo-emoji">{c.emoji}</span>
+                <span className="is-combo-label">{c.label}</span>
+                <span className="is-combo-desc">{c.indicators.length > 0 ? c.indicators.length + ' indicators' : 'Pick your own'}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Show which indicators are in the selected combo */}
+          {selectedCombo !== 'custom' && (
+            <div className="is-combo-detail">
+              <span className="is-combo-info">{comboDef.description}</span>
+              <div className="is-combo-tags">
+                {comboDef.indicators.map(id => {
+                  const ind = INDICATORS.find(i => i.id === id)!;
+                  return <span key={id} className="is-combo-tag">{ind.emoji} {ind.label}</span>;
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Custom indicator picker */}
+          {selectedCombo === 'custom' && (
+            <div className="is-custom-picker">
+              <span className="is-custom-hint">Select 2–4 indicators:</span>
+              <div className="is-custom-grid">
+                {INDICATORS.map(ind => (
+                  <button
+                    key={ind.id}
+                    className={`is-custom-btn ${customPicks.includes(ind.id) ? 'active' : ''}`}
+                    onClick={() => toggleCustomPick(ind.id)}
+                    disabled={scanning}
+                  >
+                    <span>{ind.emoji}</span>
+                    <span>{ind.label}</span>
+                  </button>
+                ))}
+              </div>
+              {customPicks.length > 0 && (
+                <div className="is-combo-tags" style={{ marginTop: '6px' }}>
+                  {customPicks.map(id => {
+                    const ind = INDICATORS.find(i => i.id === id)!;
+                    return <span key={id} className="is-combo-tag">{ind.emoji} {ind.label}</span>;
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Analysis Summary Cards ── */}
-      {results.length > 0 && !scanning && (
+      {activeResults.length > 0 && !scanning && (
         <div className="is-summary-grid">
           <div className="is-sum-card">
-            <span className="is-sum-value">{results.length}</span>
+            <span className="is-sum-value">{activeResults.length}</span>
             <span className="is-sum-label">Scanned</span>
           </div>
           <div className="is-sum-card bullish">
             <span className="is-sum-value">{bullishCount}</span>
-            <span className="is-sum-label">🟢 Bullish ({results.length > 0 ? Math.round(bullishCount / results.length * 100) : 0}%)</span>
+            <span className="is-sum-label">🟢 Bullish ({activeResults.length > 0 ? Math.round(bullishCount / activeResults.length * 100) : 0}%)</span>
           </div>
           <div className="is-sum-card bearish">
             <span className="is-sum-value">{bearishCount}</span>
-            <span className="is-sum-label">🔴 Bearish ({results.length > 0 ? Math.round(bearishCount / results.length * 100) : 0}%)</span>
+            <span className="is-sum-label">🔴 Bearish ({activeResults.length > 0 ? Math.round(bearishCount / activeResults.length * 100) : 0}%)</span>
           </div>
           <div className="is-sum-card neutral">
             <span className="is-sum-value">{neutralCount}</span>
@@ -426,28 +634,38 @@ export function IndicatorScreener({ market, currency, onSelectSymbol }: Indicato
             </span>
             <span className="is-sum-label">Avg Change</span>
           </div>
-          {topStock && (
+          {mode === 'single' && topStock && (
             <div className="is-sum-card top-pick" onClick={() => onSelectSymbol(topStock.symbol)}>
               <span className="is-sum-value">{topStock.symbol}</span>
               <span className="is-sum-label">⭐ Top Signal ({topStock.strength})</span>
             </div>
           )}
+          {mode === 'combo' && topCombo && (
+            <div className="is-sum-card top-pick" onClick={() => onSelectSymbol(topCombo.symbol)}>
+              <span className="is-sum-value">{topCombo.symbol}</span>
+              <span className="is-sum-label">⭐ Top Combo ({topCombo.comboScore}) — {topCombo.agreement}% agree</span>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Indicator Dropdown */}
+      {/* Indicator Dropdown (single mode only) */}
       <div className="is-controls">
-        <div className="is-row">
-          <span className="is-label">Indicator:</span>
-          <select className="is-select" value={indicator}
-            onChange={e => { setIndicator(e.target.value as IndicatorId); setResults([]); }}
-            disabled={scanning}>
-            {INDICATORS.map(ind => (
-              <option key={ind.id} value={ind.id}>{ind.emoji} {ind.label}</option>
-            ))}
-          </select>
-        </div>
-        <div className="is-desc">{def.description}</div>
+        {mode === 'single' && (
+          <>
+            <div className="is-row">
+              <span className="is-label">Indicator:</span>
+              <select className="is-select" value={indicator}
+                onChange={e => { setIndicator(e.target.value as IndicatorId); setResults([]); }}
+                disabled={scanning}>
+                {INDICATORS.map(ind => (
+                  <option key={ind.id} value={ind.id}>{ind.emoji} {ind.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="is-desc">{def.description}</div>
+          </>
+        )}
 
         {/* Universe */}
         <div className="is-row">
@@ -455,11 +673,11 @@ export function IndicatorScreener({ market, currency, onSelectSymbol }: Indicato
           <div className="tp-limit-toggle">
             <button className={`tp-limit-btn ${universe === 'default' ? 'active' : ''}`}
               onClick={() => setUniverse('default')} disabled={scanning}>
-              {isIndian ? 'Popular (30)' : 'Popular (30)'}
+              {isCrypto ? 'Popular (20)' : 'Popular (30)'}
             </button>
-            <button className={`tp-limit-btn ${universe === (isIndian ? 'nifty50' : 'sp500') ? 'active' : ''}`}
-              onClick={() => setUniverse(isIndian ? 'nifty50' : 'sp500')} disabled={scanning}>
-              {isIndian ? 'Nifty 50' : 'S&P 500 (100)'}
+            <button className={`tp-limit-btn ${universe === (isCrypto ? 'crypto50' : isIndian ? 'nifty50' : 'sp500') ? 'active' : ''}`}
+              onClick={() => setUniverse(isCrypto ? 'crypto50' : isIndian ? 'nifty50' : 'sp500')} disabled={scanning}>
+              {isCrypto ? 'Top 50 Crypto' : isIndian ? 'Nifty 50' : 'S&P 500 (100)'}
             </button>
           </div>
         </div>
@@ -497,8 +715,14 @@ export function IndicatorScreener({ market, currency, onSelectSymbol }: Indicato
           </div>
         </div>
 
-        <button className="tp-scan-btn" onClick={handleScan} disabled={scanning}>
-          {scanning ? `Scanning... ${progress.done}/${progress.total}` : `🔍 Scan ${def.label}`}
+        <button className="tp-scan-btn" onClick={handleScan}
+          disabled={scanning || (mode === 'combo' && activeComboIndicators.length < 2)}>
+          {scanning
+            ? `Scanning... ${progress.done}/${progress.total}`
+            : mode === 'single'
+              ? `🔍 Scan ${def.label}`
+              : `🔗 Combo Scan (${activeComboIndicators.length} indicators)`
+          }
         </button>
       </div>
 
@@ -509,8 +733,8 @@ export function IndicatorScreener({ market, currency, onSelectSymbol }: Indicato
         </div>
       )}
 
-      {/* Results Table */}
-      {sorted.length > 0 && (
+      {/* Single Results Table */}
+      {mode === 'single' && sorted.length > 0 && (
         <div className="is-results">
           <div className="is-header-row">
             <span>#</span>
@@ -550,27 +774,80 @@ export function IndicatorScreener({ market, currency, onSelectSymbol }: Indicato
         </div>
       )}
 
-      {!scanning && results.length > 0 && sorted.length === 0 && (
-        <div className="is-empty"><p>No stocks match the current filter.</p></div>
-      )}
-
-      {!scanning && results.length === 0 && (
-        <div className="is-empty">
-          <p>Select an indicator and click <b>Scan {def.label}</b> to screen {getUniverseLabel(market, universe)}.</p>
-          <div className="is-indicator-grid">
-            {INDICATORS.map(ind => (
-              <div key={ind.id} className={`is-ind-card ${indicator === ind.id ? 'active' : ''}`}
-                onClick={() => { setIndicator(ind.id); setResults([]); }}>
-                <span className="is-ind-emoji">{ind.emoji}</span>
-                <span className="is-ind-name">{ind.label}</span>
-                <span className="is-ind-desc">{ind.description}</span>
-              </div>
-            ))}
+      {/* Combo Results Table */}
+      {mode === 'combo' && comboSorted.length > 0 && (
+        <div className="is-results is-combo-results">
+          <div className="is-combo-header-row">
+            <span>#</span>
+            <span>Symbol</span>
+            <span>Price</span>
+            <span>Signals</span>
+            <span>Agree</span>
+            <span>Score</span>
+            <span>Chg</span>
           </div>
+          {comboSorted.map((r, i) => (
+            <div key={r.symbol} className="is-combo-data-row" onClick={() => onSelectSymbol(r.symbol)}>
+              <span className="is-rank">{i + 1}</span>
+              <span className="is-sym">{r.symbol}</span>
+              <span className="is-price">{sym}{r.price.toFixed(2)}</span>
+              <span className="is-combo-signals">
+                {r.indicators.map(ind => {
+                  const def = INDICATORS.find(x => x.id === ind.id);
+                  return (
+                    <span key={ind.id} className={`is-combo-sig-chip ${ind.signalType}`} title={ind.detail}>
+                      {def?.emoji} {ind.signal.replace(/🟢|🔴|⚡|⚠️|↑|↓|≈/g, '').trim()}
+                    </span>
+                  );
+                })}
+              </span>
+              <span className={`is-agree ${r.agreement >= 80 ? 'high' : r.agreement >= 60 ? 'mid' : 'low'}`}>
+                {r.agreement}%
+              </span>
+              <span className="is-strength">
+                <span className="is-str-bar">
+                  <span className="is-str-fill" style={{
+                    width: `${r.comboScore}%`,
+                    background: r.comboScore >= 70 ? '#22c55e' : r.comboScore >= 40 ? '#f59e0b' : '#ef4444',
+                  }} />
+                </span>
+                <span className="is-str-val">{r.comboScore}</span>
+              </span>
+              <span className={`is-change ${r.dayChange >= 0 ? 'up' : 'down'}`}>
+                {r.dayChange >= 0 ? '+' : ''}{r.dayChange.toFixed(2)}%
+              </span>
+            </div>
+          ))}
         </div>
       )}
 
-      {lastScan && <div className="tp-footer">Last scanned at {lastScan} — {sorted.length} results shown</div>}
+      {!scanning && activeResults.length > 0 && (mode === 'single' ? sorted.length === 0 : comboSorted.length === 0) && (
+        <div className="is-empty"><p>No stocks match the current filter.</p></div>
+      )}
+
+      {!scanning && activeResults.length === 0 && (
+        <div className="is-empty">
+          {mode === 'single' ? (
+            <>
+              <p>Select an indicator and click <b>Scan {def.label}</b> to screen {getUniverseLabel(market, universe)}.</p>
+              <div className="is-indicator-grid">
+                {INDICATORS.map(ind => (
+                  <div key={ind.id} className={`is-ind-card ${indicator === ind.id ? 'active' : ''}`}
+                    onClick={() => { setIndicator(ind.id); setResults([]); }}>
+                    <span className="is-ind-emoji">{ind.emoji}</span>
+                    <span className="is-ind-name">{ind.label}</span>
+                    <span className="is-ind-desc">{ind.description}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p>Select a combo strategy above and click <b>Combo Scan</b> to find stocks where multiple indicators agree.</p>
+          )}
+        </div>
+      )}
+
+      {lastScan && <div className="tp-footer">Last scanned at {lastScan} — {mode === 'single' ? sorted.length : comboSorted.length} results shown</div>}
     </div>
   );
 }

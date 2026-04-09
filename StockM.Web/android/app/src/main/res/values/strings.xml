@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">KriVi\'s StockM</string>
+    <string name="title_activity_main">KriVi\'s StockM</string>
+    <string name="package_name">com.krivi.stockm</string>
+    <string name="custom_url_scheme">com.krivi.stockm</string>
+</resources>

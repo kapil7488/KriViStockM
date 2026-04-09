@@ -19,7 +19,7 @@ export type ChartInterval = '1m' | '5m' | '15m' | '1H' | '4H' | 'D';
 export type ChartType = 'candlestick' | 'line' | 'area';
 export type OverlayIndicator = 'sma20' | 'sma50' | 'sma200' | 'ema12' | 'ema26' | 'bollinger' | 'vwap';
 export type SubchartIndicator = 'volume' | 'rsi' | 'macd' | 'stochastic' | 'atr';
-export type Market = 'US' | 'NSE' | 'BSE';
+export type Market = 'US' | 'NSE' | 'BSE' | 'CRYPTO';
 
 export interface LiveQuote {
   symbol: string;
@@ -303,6 +303,10 @@ export const MARKETS: MarketConfig[] = [
   {
     id: 'BSE', label: 'BSE India', flag: '🇮🇳', currency: 'INR',
     watchlist: ['RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'ICICIBANK', 'BHARTIARTL', 'SBIN', 'ITC', 'BAJFINANCE', 'TITAN'],
+  },
+  {
+    id: 'CRYPTO', label: 'Crypto', flag: '₿', currency: 'USD',
+    watchlist: ['BTC-USD', 'ETH-USD', 'BNB-USD', 'SOL-USD', 'XRP-USD', 'ADA-USD', 'DOGE-USD', 'AVAX-USD', 'DOT-USD', 'MATIC-USD'],
   },
 ];
 

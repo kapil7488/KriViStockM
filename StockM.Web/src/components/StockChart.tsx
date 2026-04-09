@@ -1,8 +1,8 @@
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import {
-  ComposedChart, Bar, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ReferenceLine, ResponsiveContainer, Brush, Cell,
-} from 'recharts';
+  createChart, IChartApi, ISeriesApi, CandlestickData, LineData, HistogramData,
+  ColorType, CrosshairMode, LineStyle, UTCTimestamp, Time,
+} from 'lightweight-charts';
 import {
   StockBar, StockSignal, StockQuote, ChartSettings, TimeRange, ChartType, ChartInterval,
   OverlayIndicator, SubchartIndicator, TIME_RANGE_DAYS, DEFAULT_CHART_SETTINGS,
@@ -53,88 +53,432 @@ const SUBCHART_OPTIONS: { key: SubchartIndicator; label: string }[] = [
   { key: 'atr', label: 'ATR' },
 ];
 
+function toUTC(ts: string): UTCTimestamp {
+  return (new Date(ts).getTime() / 1000) as UTCTimestamp;
+}
+
+const CHART_COLORS = {
+  bg: '#0f172a',
+  grid: '#1e293b',
+  text: '#64748b',
+  crosshair: '#475569',
+  upColor: '#22c55e',
+  downColor: '#ef4444',
+};
+
+function createBaseChart(container: HTMLElement, height: number): IChartApi {
+  return createChart(container, {
+    width: container.clientWidth,
+    height,
+    layout: {
+      background: { type: ColorType.Solid, color: CHART_COLORS.bg },
+      textColor: CHART_COLORS.text,
+      fontSize: 11,
+    },
+    grid: {
+      vertLines: { color: CHART_COLORS.grid },
+      horzLines: { color: CHART_COLORS.grid },
+    },
+    crosshair: {
+      mode: CrosshairMode.Normal,
+      vertLine: { color: CHART_COLORS.crosshair, width: 1, style: LineStyle.Dashed, labelBackgroundColor: '#1e293b' },
+      horzLine: { color: CHART_COLORS.crosshair, width: 1, style: LineStyle.Dashed, labelBackgroundColor: '#1e293b' },
+    },
+    rightPriceScale: {
+      borderColor: CHART_COLORS.grid,
+      scaleMargins: { top: 0.1, bottom: 0.1 },
+    },
+    timeScale: {
+      borderColor: CHART_COLORS.grid,
+      timeVisible: true,
+      secondsVisible: false,
+      rightOffset: 5,
+      minBarSpacing: 3,
+    },
+    handleScroll: { vertTouchDrag: false },
+    handleScale: { axisPressedMouseMove: true },
+  });
+}
+
 export function StockChart({ data, signal, dataSource, liveQuote, currency, market }: StockChartProps) {
   const [settings, setSettings] = useState<ChartSettings>(DEFAULT_CHART_SETTINGS);
   const [intradayQuotes, setIntradayQuotes] = useState<StockQuote[] | null>(null);
   const [intradayLoading, setIntradayLoading] = useState(false);
-  const fetchIdRef = useRef(0); // prevent stale fetch overwrites
+  const fetchIdRef = useRef(0);
 
-  // Fetch real intraday data when interval or timeRange changes
+  // Chart refs
+  const mainContainerRef = useRef<HTMLDivElement>(null);
+  const mainChartRef = useRef<IChartApi | null>(null);
+  const volumeContainerRef = useRef<HTMLDivElement>(null);
+  const volumeChartRef = useRef<IChartApi | null>(null);
+  const rsiContainerRef = useRef<HTMLDivElement>(null);
+  const rsiChartRef = useRef<IChartApi | null>(null);
+  const macdContainerRef = useRef<HTMLDivElement>(null);
+  const macdChartRef = useRef<IChartApi | null>(null);
+  const stochContainerRef = useRef<HTMLDivElement>(null);
+  const stochChartRef = useRef<IChartApi | null>(null);
+  const atrContainerRef = useRef<HTMLDivElement>(null);
+  const atrChartRef = useRef<IChartApi | null>(null);
+
+  // Legend state for crosshair
+  const [legend, setLegend] = useState<{ o: number; h: number; l: number; c: number; v: number; time: string } | null>(null);
+
   const isIntraday = settings.interval !== 'D';
+
+  // Fetch intraday data
   useEffect(() => {
-    if (!isIntraday) {
-      setIntradayQuotes(null);
-      return;
-    }
+    if (!isIntraday) { setIntradayQuotes(null); return; }
     const id = ++fetchIdRef.current;
     const days = TIME_RANGE_DAYS[settings.timeRange];
     setIntradayLoading(true);
     fetchYahooIntraday(data.symbol, settings.interval, days, market)
-      .then(quotes => {
-        if (fetchIdRef.current === id) {
-          setIntradayQuotes(quotes);
-        }
-      })
-      .catch(() => {
-        if (fetchIdRef.current === id) setIntradayQuotes(null);
-      })
-      .finally(() => {
-        if (fetchIdRef.current === id) setIntradayLoading(false);
-      });
+      .then(quotes => { if (fetchIdRef.current === id) setIntradayQuotes(quotes); })
+      .catch(() => { if (fetchIdRef.current === id) setIntradayQuotes(null); })
+      .finally(() => { if (fetchIdRef.current === id) setIntradayLoading(false); });
   }, [data.symbol, settings.interval, settings.timeRange, market, isIntraday]);
 
-  const { chartData } = useMemo(() => {
+  // Prepare data
+  const { quotes, indicators } = useMemo(() => {
     const days = TIME_RANGE_DAYS[settings.timeRange];
-
-    // Use real intraday data if available, otherwise daily
     const displayQuotes = (isIntraday && intradayQuotes && intradayQuotes.length > 0)
       ? intradayQuotes
       : (days >= data.quotes.length ? data.quotes : data.quotes.slice(-days));
-
-    // Indicators always computed on full daily data
     const ind = computeFullIndicators(data.quotes);
+    return { quotes: displayQuotes, indicators: ind };
+  }, [data, settings.timeRange, settings.interval, isIntraday, intradayQuotes]);
+
+  // Map index from display quotes into daily indicator arrays
+  const getIndicatorIdx = useCallback((i: number) => {
     const dailyCount = data.quotes.length;
+    const days = TIME_RANGE_DAYS[settings.timeRange];
     const usedDays = Math.min(days, dailyCount);
+    if (isIntraday && intradayQuotes) {
+      return Math.min(dailyCount - 1, dailyCount - usedDays + Math.floor(i / Math.max(1, quotes.length / usedDays)));
+    }
+    return dailyCount - quotes.length + i;
+  }, [data.quotes.length, settings.timeRange, isIntraday, intradayQuotes, quotes.length]);
 
-    const cd = displayQuotes.map((q, i) => {
-      // For intraday, map back to the nearest daily bar index for indicators
-      const dailyIdx = (isIntraday && intradayQuotes)
-        ? Math.min(dailyCount - 1, dailyCount - usedDays + Math.floor(i / Math.max(1, displayQuotes.length / usedDays)))
-        : (dailyCount - displayQuotes.length + i);
-      const idx = Math.max(0, Math.min(dailyIdx, ind.sma20.length - 1));
+  // ── Main chart ──
+  useEffect(() => {
+    if (!mainContainerRef.current || quotes.length === 0) return;
+    const container = mainContainerRef.current;
+    container.innerHTML = '';
 
-      const isUp = q.close >= q.open;
-      return {
-        date: isIntraday ? q.timestamp.slice(11) || q.timestamp.slice(5) : q.timestamp.slice(5),
-        fullDate: q.timestamp,
+    const chart = createBaseChart(container, 380);
+    mainChartRef.current = chart;
+
+    // Price series
+    let priceSeries: ISeriesApi<'Candlestick'> | ISeriesApi<'Line'> | ISeriesApi<'Area'>;
+
+    if (settings.chartType === 'candlestick') {
+      const s = chart.addCandlestickSeries({
+        upColor: CHART_COLORS.upColor,
+        downColor: CHART_COLORS.downColor,
+        borderUpColor: CHART_COLORS.upColor,
+        borderDownColor: CHART_COLORS.downColor,
+        wickUpColor: CHART_COLORS.upColor,
+        wickDownColor: CHART_COLORS.downColor,
+      });
+      s.setData(quotes.map(q => ({
+        time: toUTC(q.timestamp),
         open: q.open,
         high: q.high,
         low: q.low,
         close: q.close,
-        volume: q.volume,
-        candleBody: isUp ? [q.open, q.close] : [q.close, q.open],
-        candleWick: [q.low, q.high],
-        isUp,
-        sma20: ind.sma20[idx] || undefined,
-        sma50: ind.sma50[idx] || undefined,
-        sma200: ind.sma200[idx] || undefined,
-        ema12: ind.ema12[idx] || undefined,
-        ema26: ind.ema26[idx] || undefined,
-        bbUpper: ind.bollingerUpper[idx] || undefined,
-        bbMiddle: ind.bollingerMiddle[idx] || undefined,
-        bbLower: ind.bollingerLower[idx] || undefined,
-        vwap: ind.vwap[idx] || undefined,
-        rsi: ind.rsi[idx] || undefined,
-        macdLine: ind.macdLine[idx] || undefined,
-        macdSignal: ind.macdSignal[idx] || undefined,
-        macdHist: ind.macdHistogram[idx] || undefined,
-        stochK: ind.stochK[idx] || undefined,
-        stochD: ind.stochD[idx] || undefined,
-        atr: ind.atr[idx] || undefined,
-      };
+      } as CandlestickData)));
+      priceSeries = s;
+    } else if (settings.chartType === 'line') {
+      const s = chart.addLineSeries({ color: '#3b82f6', lineWidth: 2 });
+      s.setData(quotes.map(q => ({ time: toUTC(q.timestamp), value: q.close } as LineData)));
+      priceSeries = s as any;
+    } else {
+      const s = chart.addAreaSeries({
+        lineColor: '#3b82f6',
+        topColor: 'rgba(59,130,246,0.25)',
+        bottomColor: 'rgba(59,130,246,0.02)',
+        lineWidth: 2,
+      });
+      s.setData(quotes.map(q => ({ time: toUTC(q.timestamp), value: q.close } as LineData)));
+      priceSeries = s as any;
+    }
+
+    // Volume as histogram on main chart (subtle background)
+    const volSeries = chart.addHistogramSeries({
+      priceFormat: { type: 'volume' },
+      priceScaleId: 'vol',
     });
-    return { chartData: cd };
-  }, [data, settings.timeRange, settings.interval, isIntraday, intradayQuotes]);
+    chart.priceScale('vol').applyOptions({
+      scaleMargins: { top: 0.85, bottom: 0 },
+    });
+    volSeries.setData(quotes.map(q => ({
+      time: toUTC(q.timestamp),
+      value: q.volume,
+      color: q.close >= q.open ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)',
+    } as HistogramData)));
+
+    // Overlay indicators
+    const ind = indicators;
+    const overlayLine = (key: string, color: string, dataArr: number[], dash?: boolean) => {
+      if (!settings.overlays.includes(key as OverlayIndicator)) return;
+      const s = chart.addLineSeries({
+        color,
+        lineWidth: 1,
+        ...(dash ? { lineStyle: LineStyle.Dashed } : {}),
+        lastValueVisible: false,
+        priceLineVisible: false,
+      });
+      const lineData: LineData[] = [];
+      quotes.forEach((q, i) => {
+        const idx = Math.max(0, Math.min(getIndicatorIdx(i), dataArr.length - 1));
+        const v = dataArr[idx];
+        if (v && v > 0) lineData.push({ time: toUTC(q.timestamp), value: v } as LineData);
+      });
+      s.setData(lineData);
+    };
+
+    overlayLine('sma20', '#f59e0b', ind.sma20);
+    overlayLine('sma50', '#3b82f6', ind.sma50);
+    overlayLine('sma200', '#ef4444', ind.sma200);
+    overlayLine('ema12', '#8b5cf6', ind.ema12);
+    overlayLine('ema26', '#ec4899', ind.ema26);
+    overlayLine('vwap', '#14b8a6', ind.vwap, true);
+
+    if (settings.overlays.includes('bollinger')) {
+      overlayLine('bollinger', '#6366f1', ind.bollingerUpper, true);
+      // Also middle & lower (force them even though key won't re-check)
+      const addBB = (arr: number[], dash: boolean) => {
+        const s = chart.addLineSeries({
+          color: '#6366f1',
+          lineWidth: 1,
+          lineStyle: dash ? LineStyle.Dashed : LineStyle.Solid,
+          lastValueVisible: false,
+          priceLineVisible: false,
+        });
+        const ld: LineData[] = [];
+        quotes.forEach((q, i) => {
+          const idx = Math.max(0, Math.min(getIndicatorIdx(i), arr.length - 1));
+          const v = arr[idx];
+          if (v && v > 0) ld.push({ time: toUTC(q.timestamp), value: v } as LineData);
+        });
+        s.setData(ld);
+      };
+      addBB(ind.bollingerMiddle, false);
+      addBB(ind.bollingerLower, true);
+    }
+
+    // Signal price lines
+    if (signal) {
+      const addPriceLine = (price: number, color: string, title: string) => {
+        (priceSeries as any).createPriceLine({
+          price,
+          color,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title,
+        });
+      };
+      addPriceLine(signal.entryPrice, '#eab308', `Entry ${currency}${signal.entryPrice.toFixed(2)}`);
+      addPriceLine(signal.stopLoss, '#ef4444', `SL ${currency}${signal.stopLoss.toFixed(2)}`);
+      addPriceLine(signal.takeProfit, '#22c55e', `TP ${currency}${signal.takeProfit.toFixed(2)}`);
+    }
+
+    // Crosshair legend
+    chart.subscribeCrosshairMove(param => {
+      if (!param.time || !param.seriesData?.size) {
+        setLegend(null);
+        return;
+      }
+      const priceData: any = param.seriesData.get(priceSeries);
+      if (!priceData) { setLegend(null); return; }
+      const t = param.time as number;
+      const d = new Date(t * 1000);
+      const timeStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+      if ('open' in priceData) {
+        setLegend({ o: priceData.open, h: priceData.high, l: priceData.low, c: priceData.close, v: 0, time: timeStr });
+      } else {
+        setLegend({ o: 0, h: 0, l: 0, c: priceData.value, v: 0, time: timeStr });
+      }
+    });
+
+    // Auto-fit
+    chart.timeScale().fitContent();
+
+    // Resize handler
+    const handleResize = () => {
+      if (container.clientWidth > 0) chart.applyOptions({ width: container.clientWidth });
+    };
+    const ro = new ResizeObserver(handleResize);
+    ro.observe(container);
+
+    return () => {
+      ro.disconnect();
+      chart.remove();
+      mainChartRef.current = null;
+    };
+  }, [quotes, indicators, settings.chartType, settings.overlays, signal, currency, getIndicatorIdx]);
+
+  // ── Sub-chart: RSI ──
+  useEffect(() => {
+    if (!settings.subcharts.includes('rsi') || !rsiContainerRef.current || quotes.length === 0) return;
+    const container = rsiContainerRef.current;
+    container.innerHTML = '';
+    const chart = createBaseChart(container, 100);
+    rsiChartRef.current = chart;
+    chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.1, bottom: 0.05 } });
+
+    const rsiSeries = chart.addLineSeries({ color: '#a855f7', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true });
+    const rsiData: LineData[] = [];
+    quotes.forEach((q, i) => {
+      const idx = Math.max(0, Math.min(getIndicatorIdx(i), indicators.rsi.length - 1));
+      const v = indicators.rsi[idx];
+      if (v > 0) rsiData.push({ time: toUTC(q.timestamp), value: v } as LineData);
+    });
+    rsiSeries.setData(rsiData);
+
+    // Overbought/oversold lines
+    const addLevel = (price: number, color: string) => {
+      rsiSeries.createPriceLine({ price, color, lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: '' });
+    };
+    addLevel(70, '#ef4444');
+    addLevel(30, '#22c55e');
+    addLevel(50, '#475569');
+
+    chart.timeScale().fitContent();
+    const ro = new ResizeObserver(() => { if (container.clientWidth > 0) chart.applyOptions({ width: container.clientWidth }); });
+    ro.observe(container);
+
+    // Sync time scale with main chart
+    if (mainChartRef.current) {
+      const mainTs = mainChartRef.current.timeScale();
+      const subTs = chart.timeScale();
+      mainTs.subscribeVisibleLogicalRangeChange(range => { if (range) subTs.setVisibleLogicalRange(range); });
+      subTs.subscribeVisibleLogicalRangeChange(range => { if (range) mainTs.setVisibleLogicalRange(range); });
+    }
+
+    return () => { ro.disconnect(); chart.remove(); rsiChartRef.current = null; };
+  }, [quotes, indicators, settings.subcharts, getIndicatorIdx]);
+
+  // ── Sub-chart: MACD ──
+  useEffect(() => {
+    if (!settings.subcharts.includes('macd') || !macdContainerRef.current || quotes.length === 0) return;
+    const container = macdContainerRef.current;
+    container.innerHTML = '';
+    const chart = createBaseChart(container, 110);
+    macdChartRef.current = chart;
+
+    const macdLine = chart.addLineSeries({ color: '#3b82f6', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+    const signalLine = chart.addLineSeries({ color: '#f97316', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, lineStyle: LineStyle.Dashed });
+    const histSeries = chart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false });
+
+    const macdData: LineData[] = [], sigData: LineData[] = [], histData: HistogramData[] = [];
+    quotes.forEach((q, i) => {
+      const idx = Math.max(0, Math.min(getIndicatorIdx(i), indicators.macdLine.length - 1));
+      const ml = indicators.macdLine[idx], ms = indicators.macdSignal[idx], mh = indicators.macdHistogram[idx];
+      const t = toUTC(q.timestamp);
+      if (ml !== 0 || ms !== 0) {
+        macdData.push({ time: t, value: ml } as LineData);
+        sigData.push({ time: t, value: ms } as LineData);
+        histData.push({ time: t, value: mh, color: mh >= 0 ? 'rgba(34,197,94,0.6)' : 'rgba(239,68,68,0.6)' } as HistogramData);
+      }
+    });
+    macdLine.setData(macdData);
+    signalLine.setData(sigData);
+    histSeries.setData(histData);
+
+    chart.timeScale().fitContent();
+    const ro = new ResizeObserver(() => { if (container.clientWidth > 0) chart.applyOptions({ width: container.clientWidth }); });
+    ro.observe(container);
+
+    if (mainChartRef.current) {
+      const mainTs = mainChartRef.current.timeScale();
+      const subTs = chart.timeScale();
+      mainTs.subscribeVisibleLogicalRangeChange(range => { if (range) subTs.setVisibleLogicalRange(range); });
+      subTs.subscribeVisibleLogicalRangeChange(range => { if (range) mainTs.setVisibleLogicalRange(range); });
+    }
+
+    return () => { ro.disconnect(); chart.remove(); macdChartRef.current = null; };
+  }, [quotes, indicators, settings.subcharts, getIndicatorIdx]);
+
+  // ── Sub-chart: Stochastic ──
+  useEffect(() => {
+    if (!settings.subcharts.includes('stochastic') || !stochContainerRef.current || quotes.length === 0) return;
+    const container = stochContainerRef.current;
+    container.innerHTML = '';
+    const chart = createBaseChart(container, 100);
+    stochChartRef.current = chart;
+
+    const kLine = chart.addLineSeries({ color: '#3b82f6', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+    const dLine = chart.addLineSeries({ color: '#f97316', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, lineStyle: LineStyle.Dashed });
+
+    const kData: LineData[] = [], dData: LineData[] = [];
+    quotes.forEach((q, i) => {
+      const idx = Math.max(0, Math.min(getIndicatorIdx(i), indicators.stochK.length - 1));
+      const k = indicators.stochK[idx], d = indicators.stochD[idx];
+      const t = toUTC(q.timestamp);
+      if (k > 0 || d > 0) {
+        kData.push({ time: t, value: k } as LineData);
+        dData.push({ time: t, value: d } as LineData);
+      }
+    });
+    kLine.setData(kData);
+    dLine.setData(dData);
+
+    kLine.createPriceLine({ price: 80, color: '#ef4444', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: '' });
+    kLine.createPriceLine({ price: 20, color: '#22c55e', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: '' });
+
+    chart.timeScale().fitContent();
+    const ro = new ResizeObserver(() => { if (container.clientWidth > 0) chart.applyOptions({ width: container.clientWidth }); });
+    ro.observe(container);
+
+    if (mainChartRef.current) {
+      const mainTs = mainChartRef.current.timeScale();
+      const subTs = chart.timeScale();
+      mainTs.subscribeVisibleLogicalRangeChange(range => { if (range) subTs.setVisibleLogicalRange(range); });
+      subTs.subscribeVisibleLogicalRangeChange(range => { if (range) mainTs.setVisibleLogicalRange(range); });
+    }
+
+    return () => { ro.disconnect(); chart.remove(); stochChartRef.current = null; };
+  }, [quotes, indicators, settings.subcharts, getIndicatorIdx]);
+
+  // ── Sub-chart: ATR ──
+  useEffect(() => {
+    if (!settings.subcharts.includes('atr') || !atrContainerRef.current || quotes.length === 0) return;
+    const container = atrContainerRef.current;
+    container.innerHTML = '';
+    const chart = createBaseChart(container, 80);
+    atrChartRef.current = chart;
+
+    const atrSeries = chart.addAreaSeries({
+      lineColor: '#14b8a6',
+      topColor: 'rgba(20,184,166,0.15)',
+      bottomColor: 'rgba(20,184,166,0.02)',
+      lineWidth: 1.5,
+      priceLineVisible: false,
+      lastValueVisible: true,
+    });
+
+    const atrData: LineData[] = [];
+    quotes.forEach((q, i) => {
+      const idx = Math.max(0, Math.min(getIndicatorIdx(i), indicators.atr.length - 1));
+      const v = indicators.atr[idx];
+      if (v > 0) atrData.push({ time: toUTC(q.timestamp), value: v } as LineData);
+    });
+    atrSeries.setData(atrData);
+
+    chart.timeScale().fitContent();
+    const ro = new ResizeObserver(() => { if (container.clientWidth > 0) chart.applyOptions({ width: container.clientWidth }); });
+    ro.observe(container);
+
+    if (mainChartRef.current) {
+      const mainTs = mainChartRef.current.timeScale();
+      const subTs = chart.timeScale();
+      mainTs.subscribeVisibleLogicalRangeChange(range => { if (range) subTs.setVisibleLogicalRange(range); });
+      subTs.subscribeVisibleLogicalRangeChange(range => { if (range) mainTs.setVisibleLogicalRange(range); });
+    }
+
+    return () => { ro.disconnect(); chart.remove(); atrChartRef.current = null; };
+  }, [quotes, indicators, settings.subcharts, getIndicatorIdx]);
 
   const toggleOverlay = (key: OverlayIndicator) => {
     setSettings(prev => ({
@@ -144,7 +488,6 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
         : [...prev.overlays, key],
     }));
   };
-
   const toggleSubchart = (key: SubchartIndicator) => {
     setSettings(prev => ({
       ...prev,
@@ -165,62 +508,18 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
       {/* Data Source Banner */}
       <div className={`data-source-banner ${dataSource}`}>
         {dataSource === 'simulated' && (
-          <>
-            <span className="ds-badge simulated">⚠️ SIMULATED</span>
-            <span className="ds-text">
-              Chart data is simulated — Yahoo Finance historical data was unavailable.
-            </span>
-          </>
+          <><span className="ds-badge simulated">⚠️ SIMULATED</span>
+            <span className="ds-text">Chart data is simulated — Yahoo Finance historical data was unavailable.</span></>
         )}
         {dataSource === 'live-patched' && (
-          <>
-            <span className="ds-badge patched">📡 LIVE + SIMULATED</span>
-            <span className="ds-text">
-              Today's price is <b>LIVE</b> ({currency}{liveQuote?.lastPrice.toFixed(2)}),
-              historical chart is simulated.
-            </span>
-          </>
+          <><span className="ds-badge patched">📡 LIVE + SIM</span>
+            <span className="ds-text">Today's price is <b>LIVE</b> ({currency}{liveQuote?.lastPrice.toFixed(2)}), historical chart is simulated.</span></>
         )}
         {dataSource === 'live-api' && (
-          <>
-            <span className="ds-badge live">🟢 LIVE DATA</span>
-            <span className="ds-text">
-              Real OHLC data from Yahoo Finance — reflects actual market prices.
-            </span>
-          </>
+          <><span className="ds-badge live">🟢 LIVE</span>
+            <span className="ds-text">Real OHLC data from Yahoo Finance.</span></>
         )}
       </div>
-
-      {/* Live vs Chart Comparison (when live quote exists) */}
-      {liveQuote && dataSource !== 'live-api' && (
-        <div className="live-comparison">
-          <div className="lc-row">
-            <span className="lc-label">Live Market Price</span>
-            <span className="lc-value live">{currency}{liveQuote.lastPrice.toFixed(2)}</span>
-            <span className={`lc-change ${liveQuote.percentChange >= 0 ? 'up' : 'down'}`}>
-              {liveQuote.percentChange >= 0 ? '▲' : '▼'} {Math.abs(liveQuote.change).toFixed(2)} ({Math.abs(liveQuote.percentChange).toFixed(2)}%)
-            </span>
-          </div>
-          <div className="lc-row">
-            <span className="lc-label">Chart Price (simulated)</span>
-            <span className="lc-value sim">{currency}{last.close.toFixed(2)}</span>
-          </div>
-          <div className="lc-row">
-            <span className="lc-label">Day Range</span>
-            <span className="lc-value">{currency}{liveQuote.dayLow.toFixed(2)} – {currency}{liveQuote.dayHigh.toFixed(2)}</span>
-          </div>
-          <div className="lc-row">
-            <span className="lc-label">52W Range</span>
-            <span className="lc-value">{currency}{liveQuote.yearLow.toFixed(2)} – {currency}{liveQuote.yearHigh.toFixed(2)}</span>
-          </div>
-          {liveQuote.volume > 0 && (
-            <div className="lc-row">
-              <span className="lc-label">Volume</span>
-              <span className="lc-value">{(liveQuote.volume / 1e6).toFixed(2)}M</span>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Price Header */}
       <div className="chart-price-header">
@@ -231,13 +530,23 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
             {isUp ? '+' : ''}{change.toFixed(2)} ({isUp ? '+' : ''}{changePct.toFixed(2)}%)
           </span>
         </div>
-        <div className="chart-ohlc">
-          <span>O <b>{last.open.toFixed(2)}</b></span>
-          <span>H <b>{last.high.toFixed(2)}</b></span>
-          <span>L <b>{last.low.toFixed(2)}</b></span>
-          <span>C <b>{last.close.toFixed(2)}</b></span>
-          <span>Vol <b>{(last.volume / 1e6).toFixed(1)}M</b></span>
-        </div>
+        {legend ? (
+          <div className="chart-ohlc">
+            <span>{legend.time}</span>
+            <span>O <b>{legend.o.toFixed(2)}</b></span>
+            <span>H <b>{legend.h.toFixed(2)}</b></span>
+            <span>L <b>{legend.l.toFixed(2)}</b></span>
+            <span>C <b style={{ color: legend.c >= legend.o ? '#22c55e' : '#ef4444' }}>{legend.c.toFixed(2)}</b></span>
+          </div>
+        ) : (
+          <div className="chart-ohlc">
+            <span>O <b>{last.open.toFixed(2)}</b></span>
+            <span>H <b>{last.high.toFixed(2)}</b></span>
+            <span>L <b>{last.low.toFixed(2)}</b></span>
+            <span>C <b>{last.close.toFixed(2)}</b></span>
+            <span>Vol <b>{(last.volume / 1e6).toFixed(1)}M</b></span>
+          </div>
+        )}
       </div>
 
       {/* Toolbar */}
@@ -251,36 +560,27 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
             </button>
           ))}
         </div>
-
         <div className="toolbar-divider" />
-
-        {/* Interval / Resolution selector */}
         <div className="toolbar-group">
           {INTERVALS.map(iv => (
             <button key={iv.value}
               className={`toolbar-btn ${settings.interval === iv.value ? 'active' : ''}`}
-              onClick={() => setSettings(s => ({ ...s, interval: iv.value }))}
-              title={`${iv.label} candles`}>
+              onClick={() => setSettings(s => ({ ...s, interval: iv.value }))}>
               {iv.label}
             </button>
           ))}
         </div>
-
         <div className="toolbar-divider" />
-
         <div className="toolbar-group">
           {CHART_TYPES.map(ct => (
             <button key={ct.value}
               className={`toolbar-btn ${settings.chartType === ct.value ? 'active' : ''}`}
-              onClick={() => setSettings(s => ({ ...s, chartType: ct.value }))}
-              title={ct.value}>
+              onClick={() => setSettings(s => ({ ...s, chartType: ct.value }))}>
               {ct.label}
             </button>
           ))}
         </div>
-
         <div className="toolbar-divider" />
-
         <div className="toolbar-group">
           {OVERLAY_OPTIONS.map(o => (
             <button key={o.key}
@@ -291,9 +591,7 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
             </button>
           ))}
         </div>
-
         <div className="toolbar-divider" />
-
         <div className="toolbar-group">
           {SUBCHART_OPTIONS.map(s => (
             <button key={s.key}
@@ -305,210 +603,44 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
         </div>
       </div>
 
-      {/* Main Price Chart */}
+      {/* Main Chart */}
       <div className="chart-main" style={{ position: 'relative' }}>
         {intradayLoading && (
           <div style={{
             position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'rgba(15,23,42,0.7)', zIndex: 10, borderRadius: 8,
           }}>
-            <span style={{ color: '#94a3b8', fontSize: 14 }}>Loading intraday data…</span>
+            <span style={{ color: '#94a3b8', fontSize: 14 }}>Loading…</span>
           </div>
         )}
-        <ResponsiveContainer width="100%" height={400}>
-          <ComposedChart data={chartData} margin={{ top: 10, right: 60, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
-                <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.02} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-            <XAxis dataKey="date" stroke="#64748b" fontSize={10} tickLine={false}
-              interval={Math.max(0, Math.floor(chartData.length / 12))} />
-            <YAxis stroke="#64748b" fontSize={10} tickLine={false} domain={['auto', 'auto']}
-              orientation="right" tickFormatter={(v: number) => `$${v.toFixed(0)}`} />
-            <Tooltip content={<PriceTooltip />} />
-
-            {/* Main price display */}
-            {settings.chartType === 'candlestick' && (
-              <>
-                {/* Wick (high-low range) */}
-                <Bar dataKey="candleWick" fill="transparent" barSize={1}>
-                  {chartData.map((entry, i) => (
-                    <Cell key={i} fill={entry.isUp ? '#22c55e' : '#ef4444'} />
-                  ))}
-                </Bar>
-                {/* Body (open-close range) */}
-                <Bar dataKey="candleBody" barSize={Math.max(1, Math.min(8, 500 / chartData.length))}>
-                  {chartData.map((entry, i) => (
-                    <Cell key={i} fill={entry.isUp ? '#22c55e' : '#ef4444'} />
-                  ))}
-                </Bar>
-              </>
-            )}
-            {settings.chartType === 'line' && (
-              <Line type="monotone" dataKey="close" stroke="#3b82f6" strokeWidth={2} dot={false} />
-            )}
-            {settings.chartType === 'area' && (
-              <Area type="monotone" dataKey="close" stroke="#3b82f6" strokeWidth={2}
-                fill="url(#areaFill)" />
-            )}
-
-            {/* Overlay indicators */}
-            {settings.overlays.includes('sma20') && (
-              <Line type="monotone" dataKey="sma20" stroke="#f59e0b" strokeWidth={1} dot={false} />
-            )}
-            {settings.overlays.includes('sma50') && (
-              <Line type="monotone" dataKey="sma50" stroke="#3b82f6" strokeWidth={1} dot={false} />
-            )}
-            {settings.overlays.includes('sma200') && (
-              <Line type="monotone" dataKey="sma200" stroke="#ef4444" strokeWidth={1} dot={false} />
-            )}
-            {settings.overlays.includes('ema12') && (
-              <Line type="monotone" dataKey="ema12" stroke="#8b5cf6" strokeWidth={1} dot={false} />
-            )}
-            {settings.overlays.includes('ema26') && (
-              <Line type="monotone" dataKey="ema26" stroke="#ec4899" strokeWidth={1} dot={false} />
-            )}
-            {settings.overlays.includes('bollinger') && (
-              <>
-                <Line type="monotone" dataKey="bbUpper" stroke="#6366f1" strokeWidth={1} dot={false} strokeDasharray="4 2" />
-                <Line type="monotone" dataKey="bbMiddle" stroke="#6366f1" strokeWidth={1} dot={false} strokeOpacity={0.5} />
-                <Line type="monotone" dataKey="bbLower" stroke="#6366f1" strokeWidth={1} dot={false} strokeDasharray="4 2" />
-              </>
-            )}
-            {settings.overlays.includes('vwap') && (
-              <Line type="monotone" dataKey="vwap" stroke="#14b8a6" strokeWidth={1.5} dot={false} strokeDasharray="6 3" />
-            )}
-
-            {/* Signal reference lines */}
-            {signal && (
-              <>
-                <ReferenceLine y={signal.entryPrice} stroke="#eab308" strokeDasharray="6 3"
-                  label={{ value: `Entry $${signal.entryPrice.toFixed(2)}`, fill: '#eab308', fontSize: 10, position: 'right' }} />
-                <ReferenceLine y={signal.stopLoss} stroke="#ef4444" strokeDasharray="6 3"
-                  label={{ value: `SL $${signal.stopLoss.toFixed(2)}`, fill: '#ef4444', fontSize: 10, position: 'right' }} />
-                <ReferenceLine y={signal.takeProfit} stroke="#22c55e" strokeDasharray="6 3"
-                  label={{ value: `TP $${signal.takeProfit.toFixed(2)}`, fill: '#22c55e', fontSize: 10, position: 'right' }} />
-              </>
-            )}
-
-            <Brush dataKey="date" height={20} stroke="#475569" fill="#0f172a"
-              travellerWidth={8} startIndex={Math.max(0, chartData.length - Math.min(chartData.length, 120))} />
-          </ComposedChart>
-        </ResponsiveContainer>
+        <div ref={mainContainerRef} style={{ width: '100%' }} />
       </div>
 
       {/* Sub-charts */}
-      {settings.subcharts.includes('volume') && (
-        <div className="subchart">
-          <div className="subchart-label">Volume</div>
-          <ResponsiveContainer width="100%" height={80}>
-            <ComposedChart data={chartData} margin={{ top: 2, right: 60, left: 0, bottom: 0 }}>
-              <YAxis stroke="#64748b" fontSize={9} tickLine={false} orientation="right"
-                tickFormatter={(v: number) => `${(v / 1e6).toFixed(0)}M`} />
-              <Bar dataKey="volume" barSize={Math.max(1, Math.min(6, 400 / chartData.length))}>
-                {chartData.map((entry, i) => (
-                  <Cell key={i} fill={entry.isUp ? 'rgba(34,197,94,0.6)' : 'rgba(239,68,68,0.6)'} />
-                ))}
-              </Bar>
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
       {settings.subcharts.includes('rsi') && (
         <div className="subchart">
           <div className="subchart-label">RSI (14)</div>
-          <ResponsiveContainer width="100%" height={80}>
-            <ComposedChart data={chartData} margin={{ top: 2, right: 60, left: 0, bottom: 0 }}>
-              <YAxis stroke="#64748b" fontSize={9} tickLine={false} orientation="right"
-                domain={[0, 100]} ticks={[30, 50, 70]} />
-              <ReferenceLine y={70} stroke="#ef4444" strokeDasharray="3 3" strokeOpacity={0.4} />
-              <ReferenceLine y={30} stroke="#22c55e" strokeDasharray="3 3" strokeOpacity={0.4} />
-              <Area type="monotone" dataKey="rsi" stroke="#a855f7" strokeWidth={1.5}
-                fill="rgba(168,85,247,0.1)" dot={false} />
-            </ComposedChart>
-          </ResponsiveContainer>
+          <div ref={rsiContainerRef} style={{ width: '100%' }} />
         </div>
       )}
-
       {settings.subcharts.includes('macd') && (
         <div className="subchart">
           <div className="subchart-label">MACD</div>
-          <ResponsiveContainer width="100%" height={90}>
-            <ComposedChart data={chartData} margin={{ top: 2, right: 60, left: 0, bottom: 0 }}>
-              <YAxis stroke="#64748b" fontSize={9} tickLine={false} orientation="right" />
-              <ReferenceLine y={0} stroke="#475569" />
-              <Bar dataKey="macdHist" barSize={Math.max(1, Math.min(4, 300 / chartData.length))}>
-                {chartData.map((entry, i) => (
-                  <Cell key={i} fill={(entry.macdHist ?? 0) >= 0 ? 'rgba(34,197,94,0.6)' : 'rgba(239,68,68,0.6)'} />
-                ))}
-              </Bar>
-              <Line type="monotone" dataKey="macdLine" stroke="#3b82f6" strokeWidth={1.5} dot={false} />
-              <Line type="monotone" dataKey="macdSignal" stroke="#f97316" strokeWidth={1} dot={false} />
-            </ComposedChart>
-          </ResponsiveContainer>
+          <div ref={macdContainerRef} style={{ width: '100%' }} />
         </div>
       )}
-
       {settings.subcharts.includes('stochastic') && (
         <div className="subchart">
           <div className="subchart-label">Stochastic</div>
-          <ResponsiveContainer width="100%" height={80}>
-            <ComposedChart data={chartData} margin={{ top: 2, right: 60, left: 0, bottom: 0 }}>
-              <YAxis stroke="#64748b" fontSize={9} tickLine={false} orientation="right"
-                domain={[0, 100]} ticks={[20, 50, 80]} />
-              <ReferenceLine y={80} stroke="#ef4444" strokeDasharray="3 3" strokeOpacity={0.4} />
-              <ReferenceLine y={20} stroke="#22c55e" strokeDasharray="3 3" strokeOpacity={0.4} />
-              <Line type="monotone" dataKey="stochK" stroke="#3b82f6" strokeWidth={1.5} dot={false} />
-              <Line type="monotone" dataKey="stochD" stroke="#f97316" strokeWidth={1} dot={false} />
-            </ComposedChart>
-          </ResponsiveContainer>
+          <div ref={stochContainerRef} style={{ width: '100%' }} />
         </div>
       )}
-
       {settings.subcharts.includes('atr') && (
         <div className="subchart">
           <div className="subchart-label">ATR (14)</div>
-          <ResponsiveContainer width="100%" height={70}>
-            <ComposedChart data={chartData} margin={{ top: 2, right: 60, left: 0, bottom: 0 }}>
-              <YAxis stroke="#64748b" fontSize={9} tickLine={false} orientation="right" />
-              <Area type="monotone" dataKey="atr" stroke="#14b8a6" strokeWidth={1.5}
-                fill="rgba(20,184,166,0.1)" dot={false} />
-            </ComposedChart>
-          </ResponsiveContainer>
+          <div ref={atrContainerRef} style={{ width: '100%' }} />
         </div>
       )}
-    </div>
-  );
-}
-
-function PriceTooltip({ active, payload }: any) {
-  if (!active || !payload?.length) return null;
-  const d = payload[0]?.payload;
-  if (!d) return null;
-
-  return (
-    <div className="chart-tooltip">
-      <div className="tooltip-date">{d.fullDate}</div>
-      <div className="tooltip-row">
-        <span>O</span><span style={{ color: d.isUp ? '#22c55e' : '#ef4444' }}>{d.open?.toFixed(2)}</span>
-      </div>
-      <div className="tooltip-row">
-        <span>H</span><span>{d.high?.toFixed(2)}</span>
-      </div>
-      <div className="tooltip-row">
-        <span>L</span><span>{d.low?.toFixed(2)}</span>
-      </div>
-      <div className="tooltip-row">
-        <span>C</span><span style={{ color: d.isUp ? '#22c55e' : '#ef4444' }}>{d.close?.toFixed(2)}</span>
-      </div>
-      <div className="tooltip-row">
-        <span>Vol</span><span>{((d.volume || 0) / 1e6).toFixed(1)}M</span>
-      </div>
-      {d.rsi > 0 && <div className="tooltip-row"><span>RSI</span><span>{d.rsi.toFixed(1)}</span></div>}
     </div>
   );
 }

@@ -120,6 +120,20 @@ export function useStockData(): UseStockDataReturn {
           }
         }
       }
+      // ---- Crypto path: Yahoo Finance (tickers like BTC-USD) ----
+      else if (market === 'CRYPTO') {
+        try {
+          data = await fetchYahooHistorical(symbol, market);
+          src = 'live-api';
+        } catch (yhErr) {
+          console.warn('[StockM] Yahoo historical failed for crypto:', yhErr);
+          data = generateSampleData(symbol, 1300);
+        }
+        try {
+          live = await fetchYahooQuote(symbol.includes('-') ? symbol : `${symbol}-USD`);
+          setLiveQuote(live);
+        } catch { /* Live quote failed */ }
+      }
       // ---- No API keys: pure simulation ----
       else {
         await new Promise(r => setTimeout(r, 300));
@@ -192,6 +206,8 @@ export function useStockData(): UseStockDataReturn {
       let live: LiveQuote | null = null;
       if (market === 'NSE' || market === 'BSE') {
         live = await fetchIndianStockQuote(symbol, market);
+      } else if (market === 'CRYPTO') {
+        live = await fetchYahooQuote(symbol.includes('-') ? symbol : `${symbol}-USD`);
       } else if (finnhubKey) {
         try { live = await fetchFinnhubQuote(symbol, finnhubKey); }
         catch { live = await fetchYahooQuote(symbol); }
@@ -252,14 +268,14 @@ export function useStockData(): UseStockDataReturn {
       } catch {
         setWatchlistQuotes([]);
       }
-    } else if (market === 'US') {
+    } else if (market === 'US' || market === 'CRYPTO') {
       try {
         const out: LiveQuote[] = [];
         for (let i = 0; i < Math.min(symbols.length, 10); i += 4) {
           const batch = symbols.slice(i, i + 4);
           const results = await Promise.all(
             batch.map(async (s) => {
-              try { return await fetchYahooQuote(s); }
+              try { return await fetchYahooQuote(market === 'CRYPTO' ? (s.includes('-') ? s : `${s}-USD`) : s); }
               catch { return null; }
             })
           );
