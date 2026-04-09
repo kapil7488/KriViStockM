@@ -163,7 +163,7 @@ export default function App() {
             </div>
           )}
 
-          {!stockData && !loading && <GuidePanel />}
+          {!stockData && !loading && <GuidePanel market={market} />}
 
           {signal && <SignalPanel signal={signal} currency={mktConfig.currency} />}
           {error && <div className="card error-card">⚠️ {error}</div>}
@@ -292,7 +292,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'guide' && <GuidePanel />}
+          {activeTab === 'guide' && <GuidePanel market={market} />}
         </div>
       </main>
 
