@@ -30,6 +30,8 @@ const INTERVALS: { value: ChartInterval; label: string }[] = [
   { value: '1H', label: '1H' },
   { value: '4H', label: '4H' },
   { value: 'D', label: '1D' },
+  { value: 'W', label: '1W' },
+  { value: 'M', label: '1M' },
 ];
 const CHART_TYPES: { value: ChartType; label: string }[] = [
   { value: 'candlestick', label: '🕯️' },
@@ -102,21 +104,59 @@ function createBaseChart(container: HTMLElement, height: number): IChartApi {
 
 /** Remove TradingView attribution watermark from chart container */
 function removeTVWatermark(container: HTMLElement) {
-  // lightweight-charts adds an <a> or <div> with TV branding
-  setTimeout(() => {
-    const links = container.querySelectorAll('a[href*="tradingview"], a[target="_blank"]');
-    links.forEach(el => (el as HTMLElement).style.display = 'none');
-    // Also hide the TV logo table-cell element
-    const tables = container.querySelectorAll('table');
-    tables.forEach(t => {
-      const anchors = t.querySelectorAll('a');
-      anchors.forEach(a => {
-        if (a.href?.includes('tradingview') || a.textContent?.includes('TradingView')) {
-          (a.closest('td') || a.closest('tr') || a).style.display = 'none';
-        }
-      });
+  const hide = () => {
+    // Hide all anchors inside the chart container (TV logo is always an <a>)
+    container.querySelectorAll('a').forEach(a => {
+      const href = a.getAttribute('href') || '';
+      if (href.includes('tradingview') || a.target === '_blank' || a.textContent?.includes('TradingView')) {
+        a.style.cssText = 'display:none!important;visibility:hidden!important;width:0!important;height:0!important;overflow:hidden!important;position:absolute!important;';
+      }
     });
-  }, 50);
+    // Also target the table row that wraps the logo
+    container.querySelectorAll('tr').forEach(tr => {
+      if (tr.querySelector('a[href*="tradingview"]') || tr.innerHTML?.includes('tradingview')) {
+        (tr as HTMLElement).style.cssText = 'display:none!important;';
+      }
+    });
+  };
+  hide();
+  // MutationObserver to catch dynamically added elements
+  const mo = new MutationObserver(hide);
+  mo.observe(container, { childList: true, subtree: true });
+  // Auto-disconnect after 2s to avoid perf overhead
+  setTimeout(() => mo.disconnect(), 2000);
+}
+
+/** Aggregate daily candles into weekly or monthly candles */
+function aggregateCandles(dailyQuotes: StockQuote[], period: 'week' | 'month'): StockQuote[] {
+  if (dailyQuotes.length === 0) return [];
+  const buckets: Map<string, StockQuote> = new Map();
+
+  for (const q of dailyQuotes) {
+    const d = new Date(q.timestamp);
+    let key: string;
+    if (period === 'week') {
+      // ISO week: get Monday of the week
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday
+      const monday = new Date(d);
+      monday.setDate(diff);
+      key = monday.toISOString().split('T')[0];
+    } else {
+      key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+    }
+
+    const existing = buckets.get(key);
+    if (!existing) {
+      buckets.set(key, { ...q, timestamp: key });
+    } else {
+      existing.high = Math.max(existing.high, q.high);
+      existing.low = Math.min(existing.low, q.low);
+      existing.close = q.close; // last close in period
+      existing.volume += q.volume;
+    }
+  }
+  return Array.from(buckets.values());
 }
 
 export function StockChart({ data, signal, dataSource, liveQuote, currency, market }: StockChartProps) {
@@ -142,7 +182,7 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
   // Legend state for crosshair
   const [legend, setLegend] = useState<{ o: number; h: number; l: number; c: number; v: number; time: string } | null>(null);
 
-  const isIntraday = settings.interval !== 'D';
+  const isIntraday = !['D', 'W', 'M'].includes(settings.interval);
 
   // Fetch intraday data
   useEffect(() => {
@@ -159,9 +199,20 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
   // Prepare data
   const { quotes, indicators } = useMemo(() => {
     const days = TIME_RANGE_DAYS[settings.timeRange];
-    const displayQuotes = (isIntraday && intradayQuotes && intradayQuotes.length > 0)
-      ? intradayQuotes
-      : (days >= data.quotes.length ? data.quotes : data.quotes.slice(-days));
+    let displayQuotes: StockQuote[];
+    if (isIntraday && intradayQuotes && intradayQuotes.length > 0) {
+      displayQuotes = intradayQuotes;
+    } else {
+      const sliced = days >= data.quotes.length ? data.quotes : data.quotes.slice(-days);
+      // Aggregate into weekly or monthly candles if needed
+      if (settings.interval === 'W') {
+        displayQuotes = aggregateCandles(sliced, 'week');
+      } else if (settings.interval === 'M') {
+        displayQuotes = aggregateCandles(sliced, 'month');
+      } else {
+        displayQuotes = sliced;
+      }
+    }
     const ind = computeFullIndicators(data.quotes);
     return { quotes: displayQuotes, indicators: ind };
   }, [data, settings.timeRange, settings.interval, isIntraday, intradayQuotes]);

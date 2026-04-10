@@ -15,7 +15,7 @@ export interface StockBar {
 export type SignalType = 'StrongBuy' | 'Buy' | 'Hold' | 'Sell' | 'StrongSell';
 export type TradingMode = 'Normal' | 'RiskControl';
 export type TimeRange = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'ALL';
-export type ChartInterval = '1m' | '5m' | '15m' | '1H' | '4H' | 'D';
+export type ChartInterval = '1m' | '5m' | '15m' | '1H' | '4H' | 'D' | 'W' | 'M';
 export type ChartType = 'candlestick' | 'line' | 'area';
 export type OverlayIndicator = 'sma20' | 'sma50' | 'sma200' | 'ema12' | 'ema26' | 'bollinger' | 'vwap';
 export type SubchartIndicator = 'volume' | 'rsi' | 'macd' | 'stochastic' | 'atr';
@@ -289,6 +289,8 @@ export const INTERVAL_MINUTES: Record<ChartInterval, number> = {
   '1H': 60,
   '4H': 240,
   'D': 1440,
+  'W': 10080,
+  'M': 43200,
 };
 
 export const MARKETS: MarketConfig[] = [
