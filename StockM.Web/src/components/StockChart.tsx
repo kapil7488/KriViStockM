@@ -105,26 +105,36 @@ function createBaseChart(container: HTMLElement, height: number): IChartApi {
 /** Remove TradingView attribution watermark from chart container */
 function removeTVWatermark(container: HTMLElement) {
   const hide = () => {
-    // Hide all anchors inside the chart container (TV logo is always an <a>)
-    container.querySelectorAll('a').forEach(a => {
-      const href = a.getAttribute('href') || '';
-      if (href.includes('tradingview') || a.target === '_blank' || a.textContent?.includes('TradingView')) {
-        a.style.cssText = 'display:none!important;visibility:hidden!important;width:0!important;height:0!important;overflow:hidden!important;position:absolute!important;';
+    // The TV logo is in a <table> positioned absolute at bottom-left with z-index 3
+    // Also target any <a>, <div>, or <table> that contains tradingview references
+    container.querySelectorAll('table').forEach(t => {
+      const el = t as HTMLElement;
+      const style = getComputedStyle(el);
+      // The TV attribution table is always position:absolute, bottom:0, left:0
+      if (style.position === 'absolute' && (style.left === '0px' || style.bottom === '0px' || style.zIndex === '3')) {
+        if (el.innerHTML.includes('tradingview') || el.innerHTML.includes('TradingView') || el.querySelector('a') || el.querySelector('svg')) {
+          el.style.cssText = 'display:none!important;visibility:hidden!important;';
+        }
       }
     });
-    // Also target the table row that wraps the logo
-    container.querySelectorAll('tr').forEach(tr => {
-      if (tr.querySelector('a[href*="tradingview"]') || tr.innerHTML?.includes('tradingview')) {
-        (tr as HTMLElement).style.cssText = 'display:none!important;';
+    // Fallback: hide any anchor with tradingview
+    container.querySelectorAll('a').forEach(a => {
+      const href = a.getAttribute('href') || '';
+      if (href.includes('tradingview') || a.textContent?.includes('TradingView')) {
+        (a as HTMLElement).style.cssText = 'display:none!important;';
+        const parent = a.closest('table') || a.closest('div');
+        if (parent && parent !== container) (parent as HTMLElement).style.cssText = 'display:none!important;';
       }
     });
   };
+  // Run multiple times to catch deferred renders
   hide();
-  // MutationObserver to catch dynamically added elements
+  setTimeout(hide, 100);
+  setTimeout(hide, 300);
+  setTimeout(hide, 800);
   const mo = new MutationObserver(hide);
   mo.observe(container, { childList: true, subtree: true });
-  // Auto-disconnect after 2s to avoid perf overhead
-  setTimeout(() => mo.disconnect(), 2000);
+  setTimeout(() => mo.disconnect(), 3000);
 }
 
 /** Aggregate daily candles into weekly or monthly candles */

@@ -126,20 +126,22 @@ body {
 
 /* ======================== CHART ======================== */
 /* Hide lightweight-charts TradingView attribution watermark */
-.chart-main a[href*="tradingview"],
-.chart-main a[target="_blank"],
-.subchart a[href*="tradingview"],
-.subchart a[target="_blank"],
+.chart-main table[style*="position"],
+.chart-main table[style*="z-index"],
+.subchart table[style*="position"],
+.subchart table[style*="z-index"],
 .chart-container a[href*="tradingview"],
 .chart-container a[target="_blank"],
 .chart-container td > a,
-[class*="tv-lightweight-charts"] a {
+.chart-main div > table:last-of-type,
+.subchart div > table:last-of-type {
   display: none !important;
   visibility: hidden !important;
   width: 0 !important;
   height: 0 !important;
   overflow: hidden !important;
   pointer-events: none !important;
+  opacity: 0 !important;
 }
 .chart-container { background: var(--bg-secondary); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; }
 .chart-price-header {
