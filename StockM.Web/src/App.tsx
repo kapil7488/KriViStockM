@@ -22,6 +22,8 @@ type SidebarTab = 'insights' | 'technical' | 'fundamental' | 'quant' | 'risk' | 
 const AV_KEY = import.meta.env.VITE_AV_KEY || '';
 const FINNHUB_KEY = import.meta.env.VITE_FINNHUB_KEY || '';
 
+const isNativeApp = typeof (window as any).Capacitor !== 'undefined' && (window as any).Capacitor.isNativePlatform?.();
+
 export default function App() {
   const [symbol, setSymbol] = useState('AAPL');
   const apiKey = AV_KEY;
@@ -344,7 +346,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Mobile Bottom Navigation (Android / small screens only) */}
+      {/* Mobile Bottom Navigation (native Android app only) */}
+      {isNativeApp && (
       <nav className="mobile-bottom-nav">
         <button className={`mobile-nav-btn ${activeTab === 'insights' ? 'active' : ''}`} onClick={() => setActiveTab('insights')}>
           <span className="nav-icon">📰</span>
@@ -375,6 +378,7 @@ export default function App() {
           <span>Chat</span>
         </button>
       </nav>
+      )}
     </div>
   );
 }
