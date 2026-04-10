@@ -380,6 +380,10 @@ export default function App() {
           <span className="nav-icon">🔥</span>
           <span>Picks</span>
         </button>
+        <button className={`mobile-nav-btn ${activeTab === 'krivis' ? 'active' : ''}`} onClick={() => setActiveTab('krivis')}>
+          <span className="nav-icon">🧠</span>
+          <span>KriVi's</span>
+        </button>
         <button className={`mobile-nav-btn ${activeTab === 'vwap' ? 'active' : ''}`} onClick={() => setActiveTab('vwap')}>
           <span className="nav-icon">📡</span>
           <span>Scan</span>
