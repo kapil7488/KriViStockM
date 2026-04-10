@@ -129,8 +129,17 @@ body {
 .chart-main a[href*="tradingview"],
 .chart-main a[target="_blank"],
 .subchart a[href*="tradingview"],
-.subchart a[target="_blank"] {
+.subchart a[target="_blank"],
+.chart-container a[href*="tradingview"],
+.chart-container a[target="_blank"],
+.chart-container td > a,
+[class*="tv-lightweight-charts"] a {
   display: none !important;
+  visibility: hidden !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
 }
 .chart-container { background: var(--bg-secondary); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; }
 .chart-price-header {

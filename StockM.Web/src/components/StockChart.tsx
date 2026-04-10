@@ -100,6 +100,25 @@ function createBaseChart(container: HTMLElement, height: number): IChartApi {
   });
 }
 
+/** Remove TradingView attribution watermark from chart container */
+function removeTVWatermark(container: HTMLElement) {
+  // lightweight-charts adds an <a> or <div> with TV branding
+  setTimeout(() => {
+    const links = container.querySelectorAll('a[href*="tradingview"], a[target="_blank"]');
+    links.forEach(el => (el as HTMLElement).style.display = 'none');
+    // Also hide the TV logo table-cell element
+    const tables = container.querySelectorAll('table');
+    tables.forEach(t => {
+      const anchors = t.querySelectorAll('a');
+      anchors.forEach(a => {
+        if (a.href?.includes('tradingview') || a.textContent?.includes('TradingView')) {
+          (a.closest('td') || a.closest('tr') || a).style.display = 'none';
+        }
+      });
+    });
+  }, 50);
+}
+
 export function StockChart({ data, signal, dataSource, liveQuote, currency, market }: StockChartProps) {
   const [settings, setSettings] = useState<ChartSettings>(DEFAULT_CHART_SETTINGS);
   const [intradayQuotes, setIntradayQuotes] = useState<StockQuote[] | null>(null);
@@ -341,6 +360,7 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
 
     // Auto-fit
     chart.timeScale().fitContent();
+    removeTVWatermark(container);
 
     // Resize handler
     const handleResize = () => {
@@ -383,6 +403,7 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
     addLevel(50, '#475569');
 
     chart.timeScale().fitContent();
+    removeTVWatermark(container);
     const ro = new ResizeObserver(() => { if (container.clientWidth > 0) chart.applyOptions({ width: container.clientWidth }); });
     ro.observe(container);
 
@@ -425,6 +446,7 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
     histSeries.setData(histData);
 
     chart.timeScale().fitContent();
+    removeTVWatermark(container);
     const ro = new ResizeObserver(() => { if (container.clientWidth > 0) chart.applyOptions({ width: container.clientWidth }); });
     ro.observe(container);
 
@@ -466,6 +488,7 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
     kLine.createPriceLine({ price: 20, color: '#22c55e', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: '' });
 
     chart.timeScale().fitContent();
+    removeTVWatermark(container);
     const ro = new ResizeObserver(() => { if (container.clientWidth > 0) chart.applyOptions({ width: container.clientWidth }); });
     ro.observe(container);
 
@@ -505,6 +528,7 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
     atrSeries.setData(atrData);
 
     chart.timeScale().fitContent();
+    removeTVWatermark(container);
     const ro = new ResizeObserver(() => { if (container.clientWidth > 0) chart.applyOptions({ width: container.clientWidth }); });
     ro.observe(container);
 
