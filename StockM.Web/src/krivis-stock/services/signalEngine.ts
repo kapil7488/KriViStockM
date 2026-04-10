@@ -113,28 +113,50 @@ function scoreToAction(compositeScore: number): KrivisAction {
   return 'hold';
 }
 
-/** Compute TP/SL from ATR */
+/** Compute TP/SL from ATR + entry zone + exit plan */
 function computeTPSL(
   action: KrivisAction,
   entryPrice: number,
   atr14: number,
-): { tp: number; sl: number } {
-  if (action === 'hold') return { tp: entryPrice, sl: entryPrice };
+  atr3: number,
+  structure: StructureResult,
+): { tp: number; sl: number; entryLow: number; entryHigh: number; exitPlan: string } {
+  if (action === 'hold') return { tp: entryPrice, sl: entryPrice, entryLow: entryPrice, entryHigh: entryPrice, exitPlan: 'No position — wait for clearer signal' };
 
   const atrMultSL = 1.5;
   const atrMultTP = 3.0;
+  // Entry zone: ±0.5×ATR3 (short-term volatility) around current price
+  const entryZoneWidth = atr3 * 0.5;
 
   if (action === 'buy') {
-    return {
-      sl: Math.round((entryPrice - atr14 * atrMultSL) * 100) / 100,
-      tp: Math.round((entryPrice + atr14 * atrMultTP) * 100) / 100,
-    };
+    const sl = Math.round((entryPrice - atr14 * atrMultSL) * 100) / 100;
+    const tp = Math.round((entryPrice + atr14 * atrMultTP) * 100) / 100;
+    const entryLow = Math.round((entryPrice - entryZoneWidth) * 100) / 100;
+    const entryHigh = Math.round((entryPrice + entryZoneWidth * 0.3) * 100) / 100;
+
+    const exitParts: string[] = [];
+    exitParts.push(`TP at ₹${tp.toFixed(2)} (+${((tp / entryPrice - 1) * 100).toFixed(1)}%)`);
+    exitParts.push(`SL at ₹${sl.toFixed(2)} (${((sl / entryPrice - 1) * 100).toFixed(1)}%)`);
+    if (structure.resistanceLevel > entryPrice) exitParts.push(`Resistance at ₹${structure.resistanceLevel.toFixed(2)}`);
+    exitParts.push(`Trail SL to breakeven after +${(atr14 * 1.5 / entryPrice * 100).toFixed(1)}% move`);
+    if (structure.isBreakout) exitParts.push('Breakout — extend TP by 1×ATR on volume');
+
+    return { tp, sl, entryLow, entryHigh, exitPlan: exitParts.join(' | ') };
   }
+
   // sell
-  return {
-    sl: Math.round((entryPrice + atr14 * atrMultSL) * 100) / 100,
-    tp: Math.round((entryPrice - atr14 * atrMultTP) * 100) / 100,
-  };
+  const sl = Math.round((entryPrice + atr14 * atrMultSL) * 100) / 100;
+  const tp = Math.round((entryPrice - atr14 * atrMultTP) * 100) / 100;
+  const entryLow = Math.round((entryPrice - entryZoneWidth * 0.3) * 100) / 100;
+  const entryHigh = Math.round((entryPrice + entryZoneWidth) * 100) / 100;
+
+  const exitParts: string[] = [];
+  exitParts.push(`TP at ₹${tp.toFixed(2)} (${((tp / entryPrice - 1) * 100).toFixed(1)}%)`);
+  exitParts.push(`SL at ₹${sl.toFixed(2)} (+${((sl / entryPrice - 1) * 100).toFixed(1)}%)`);
+  if (structure.supportLevel < entryPrice) exitParts.push(`Support at ₹${structure.supportLevel.toFixed(2)}`);
+  exitParts.push(`Trail SL to breakeven after ${(atr14 * 1.5 / entryPrice * 100).toFixed(1)}% drop`);
+
+  return { tp, sl, entryLow, entryHigh, exitPlan: exitParts.join(' | ') };
 }
 
 export function generateKrivisSignal(data: MultiTFData): KrivisSignal {
@@ -203,7 +225,8 @@ export function generateKrivisSignal(data: MultiTFData): KrivisSignal {
   // Compute entry/TP/SL
   const entryPrice = data.last5mClose;
   const atr14_5m = lastValid(data.tf5m.atr14);
-  const { tp, sl } = computeTPSL(finalAction, entryPrice, atr14_5m);
+  const atr3_5m = lastValid(data.tf5m.atr3);
+  const { tp, sl, entryLow, entryHigh, exitPlan } = computeTPSL(finalAction, entryPrice, atr14_5m, atr3_5m, structure);
 
   // Confidence: |compositeScore| mapped to 0–100
   const confidence = Math.min(100, Math.round(Math.abs(compositeScore)));
@@ -226,8 +249,11 @@ export function generateKrivisSignal(data: MultiTFData): KrivisSignal {
     action: finalAction,
     confidence,
     entryPrice,
+    entryLow,
+    entryHigh,
     stopLoss: sl,
     takeProfit: tp,
+    exitPlan,
     reasoning: reasonParts.join(' | '),
     structure,
     riskChecks: [],

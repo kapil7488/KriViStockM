@@ -14,7 +14,8 @@ export interface ScanResult {
   scannedAt: string;
 }
 
-export type ScanUniverse = 'default' | 'sp500' | 'nifty50' | 'crypto50';
+export type ScanUniverse = 'default' | 'sp500' | 'nifty50' | 'crypto50'
+  | 'banknifty' | 'psubank' | 'pharma' | 'it' | 'steel' | 'auto' | 'fmcg' | 'energy' | 'realty' | 'defence' | 'midcap' | 'smallcap';
 
 // Broader stock universe beyond the 10-stock watchlist
 const US_SCAN_UNIVERSE = [
@@ -74,12 +75,103 @@ const CRYPTO50_UNIVERSE = [
   'STX-USD', 'RUNE-USD', 'PEPE-USD', 'WIF-USD', 'BONK-USD',
 ];
 
+// ===================== Indian Sector Universes =====================
+
+const BANKNIFTY_UNIVERSE = [
+  'HDFCBANK', 'ICICIBANK', 'SBIN', 'KOTAKBANK', 'AXISBANK',
+  'INDUSINDBK', 'BANDHANBNK', 'FEDERALBNK', 'IDFCFIRSTB', 'PNB',
+  'BANKBARODA', 'AUBANK', 'CANBK',
+];
+
+const PSUBANK_UNIVERSE = [
+  'SBIN', 'PNB', 'BANKBARODA', 'CANBK', 'UNIONBANK', 'IOB',
+  'INDIANB', 'CENTRALBK', 'BANKINDIA', 'MAHABANK', 'UCOBANK',
+  'PSB', 'J&KBANK',
+];
+
+const PHARMA_UNIVERSE = [
+  'SUNPHARMA', 'DRREDDY', 'CIPLA', 'DIVISLAB', 'APOLLOHOSP',
+  'BIOCON', 'LUPIN', 'AUROPHARMA', 'TORNTPHARM', 'ALKEM',
+  'ZYDUSLIFE', 'LAURUSLABS', 'IPCALAB', 'GLENMARK', 'NATCOPHARMA',
+];
+
+const IT_UNIVERSE = [
+  'TCS', 'INFY', 'HCLTECH', 'WIPRO', 'TECHM',
+  'LTIM', 'MPHASIS', 'COFORGE', 'PERSISTENT', 'LTTS',
+  'TATAELXSI', 'HAPPSTMNDS', 'ROUTE', 'MASTEK', 'CYIENT',
+];
+
+const STEEL_UNIVERSE = [
+  'TATASTEEL', 'JSWSTEEL', 'HINDALCO', 'VEDL', 'SAIL',
+  'NATIONALUM', 'NMDC', 'JINDALSTEL', 'APLAPOLLO', 'RATNAMANI',
+  'WELCORP', 'MOIL', 'COALINDIA',
+];
+
+const AUTO_UNIVERSE = [
+  'TATAMOTORS', 'MARUTI', 'M&M', 'BAJAJ-AUTO', 'HEROMOTOCO',
+  'EICHERMOT', 'ASHOKLEY', 'TVSMOTOR', 'BALKRISIND', 'MOTHERSON',
+  'BHARATFORG', 'BOSCHLTD', 'MRF', 'APOLLOTYRE', 'EXIDEIND',
+];
+
+const FMCG_UNIVERSE = [
+  'HINDUNILVR', 'ITC', 'NESTLEIND', 'BRITANNIA', 'TATACONSUM',
+  'DABUR', 'MARICO', 'GODREJCP', 'COLPAL', 'EMAMILTD',
+  'PGHH', 'VBL', 'UBL', 'MCDOWELL-N', 'RADICO',
+];
+
+const ENERGY_UNIVERSE = [
+  'RELIANCE', 'ONGC', 'NTPC', 'POWERGRID', 'BPCL',
+  'IOC', 'GAIL', 'ADANIGREEN', 'TATAPOWER', 'ADANIPOWER',
+  'PETRONET', 'HINDPETRO', 'TORNTPOWER', 'NHPC', 'SJVN',
+];
+
+const REALTY_UNIVERSE = [
+  'DLF', 'GODREJPROP', 'OBEROIRLTY', 'PRESTIGE', 'PHOENIXLTD',
+  'BRIGADE', 'SOBHA', 'SUNTECK', 'LODHA', 'MAHLIFE',
+  'RAYMOND', 'IBREALEST', 'HEMIPROP',
+];
+
+const DEFENCE_UNIVERSE = [
+  'BEL', 'HAL', 'BHEL', 'BDL', 'SOLARINDS',
+  'COCHINSHIP', 'GRSE', 'MAZAGON', 'GARDREACH', 'DATAPATTNS',
+  'PARAS', 'ASTRAZEN', 'MIDHANI',
+];
+
+const MIDCAP_UNIVERSE = [
+  'TRENT', 'ZOMATO', 'JSWENERGY', 'CUMMINSIND', 'GODREJPROP',
+  'PIIND', 'POLYCAB', 'PERSISTENT', 'COFORGE', 'ASTRAL',
+  'PAGEIND', 'VOLTAS', 'MUTHOOTFIN', 'CROMPTON', 'GMRINFRA',
+  'FEDERALBNK', 'INDIANHOTEL', 'LALPATHLAB', 'AFFLE', 'DEEPAKNTR',
+];
+
+const SMALLCAP_UNIVERSE = [
+  'ROUTE', 'HAPPSTMNDS', 'MASTEK', 'CYIENT', 'SONATSOFTW',
+  'RATNAMANI', 'APLAPOLLO', 'CAMPUS', 'FINEORG', 'CLEAN',
+  'GRINDWELL', 'KPITTECH', 'IIFL', 'TANLA', 'ZENTEC',
+  'NAZARA', 'NEWGEN', 'LATENTVIEW', 'KAYNES', 'ELGIEQUIP',
+];
+
 export function getScanUniverse(market: Market, universe: ScanUniverse = 'default'): string[] {
   if (market === 'US') {
     return universe === 'sp500' ? SP500_UNIVERSE : US_SCAN_UNIVERSE;
   }
   if (market === 'NSE' || market === 'BSE') {
-    return universe === 'nifty50' ? NIFTY50_UNIVERSE : NSE_SCAN_UNIVERSE;
+    switch (universe) {
+      case 'nifty50': return NIFTY50_UNIVERSE;
+      case 'banknifty': return BANKNIFTY_UNIVERSE;
+      case 'psubank': return PSUBANK_UNIVERSE;
+      case 'pharma': return PHARMA_UNIVERSE;
+      case 'it': return IT_UNIVERSE;
+      case 'steel': return STEEL_UNIVERSE;
+      case 'auto': return AUTO_UNIVERSE;
+      case 'fmcg': return FMCG_UNIVERSE;
+      case 'energy': return ENERGY_UNIVERSE;
+      case 'realty': return REALTY_UNIVERSE;
+      case 'defence': return DEFENCE_UNIVERSE;
+      case 'midcap': return MIDCAP_UNIVERSE;
+      case 'smallcap': return SMALLCAP_UNIVERSE;
+      default: return NSE_SCAN_UNIVERSE;
+    }
   }
   if (market === 'CRYPTO') {
     return universe === 'crypto50' ? CRYPTO50_UNIVERSE : CRYPTO_SCAN_UNIVERSE;

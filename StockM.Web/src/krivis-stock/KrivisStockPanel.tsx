@@ -18,6 +18,9 @@ interface Props {
   onSelectSymbol: (s: string) => void;
 }
 
+/** Currency symbol helper */
+const cs = (c: string) => c === 'INR' ? '₹' : '$';
+
 export function KrivisStockPanel({ market, currency, onSelectSymbol }: Props) {
   const [scanning, setScanning] = useState(false);
   const [results, setResults] = useState<KrivisSignal[]>([]);
@@ -27,6 +30,7 @@ export function KrivisStockPanel({ market, currency, onSelectSymbol }: Props) {
   const [showDiary, setShowDiary] = useState(false);
   const [diary, setDiary] = useState<DiaryEntry[]>([]);
   const [error, setError] = useState('');
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const cancelRef = useRef(false);
 
   const runScan = useCallback(async () => {
@@ -135,9 +139,32 @@ export function KrivisStockPanel({ market, currency, onSelectSymbol }: Props) {
             className="krivis-select"
             disabled={scanning}
           >
+            {/* Common */}
             <option value="default">{market === 'US' ? 'Popular (30)' : market === 'CRYPTO' ? 'Top 20 Crypto' : 'Popular (30)'}</option>
-            {market === 'US' && <option value="sp500">S&P 500 (100)</option>}
-            {(market === 'NSE' || market === 'BSE') && <option value="nifty50">Nifty 50</option>}
+            {market === 'US' && <option value="sp500">S&amp;P 500 (100)</option>}
+            {(market === 'NSE' || market === 'BSE') && (
+              <>
+                <optgroup label="Index">
+                  <option value="nifty50">Nifty 50</option>
+                  <option value="banknifty">Bank Nifty (13)</option>
+                </optgroup>
+                <optgroup label="Sector">
+                  <option value="psubank">PSU Banks (13)</option>
+                  <option value="pharma">Pharma &amp; Healthcare (15)</option>
+                  <option value="it">IT &amp; Software (15)</option>
+                  <option value="steel">Steel &amp; Metals (13)</option>
+                  <option value="auto">Auto &amp; Ancillary (15)</option>
+                  <option value="fmcg">FMCG (15)</option>
+                  <option value="energy">Energy &amp; Power (15)</option>
+                  <option value="realty">Realty (13)</option>
+                  <option value="defence">Defence &amp; Aerospace (13)</option>
+                </optgroup>
+                <optgroup label="Cap Size">
+                  <option value="midcap">Midcap (20)</option>
+                  <option value="smallcap">Smallcap (20)</option>
+                </optgroup>
+              </>
+            )}
             {market === 'CRYPTO' && <option value="crypto50">Top 50 Crypto</option>}
           </select>
 
@@ -203,51 +230,132 @@ export function KrivisStockPanel({ market, currency, onSelectSymbol }: Props) {
                   <th>Symbol</th>
                   <th>Signal</th>
                   <th>Confidence</th>
-                  <th>Entry</th>
+                  <th>Entry Zone</th>
                   <th>SL</th>
                   <th>TP</th>
+                  <th>R:R</th>
                   <th>4H</th>
                   <th>5m</th>
-                  <th>Aligned</th>
                   <th>ADX</th>
                   <th>Risk</th>
                 </tr>
               </thead>
               <tbody>
-                {results.map((r, idx) => (
-                  <tr
-                    key={r.symbol}
-                    className={`krivis-row ${r.riskBlocked ? 'kv-row-blocked' : ''}`}
-                    onClick={() => onSelectSymbol(r.symbol)}
-                    title={r.reasoning}
-                  >
-                    <td>{idx + 1}</td>
-                    <td className="kv-sym">{r.symbol}</td>
-                    <td>{actionBadge(r.action, r.riskBlocked)}</td>
-                    <td>
-                      <div className="kv-conf-bar">
-                        <div
-                          className={`kv-conf-fill ${r.action === 'buy' ? 'kv-green' : r.action === 'sell' ? 'kv-red' : 'kv-gray'}`}
-                          style={{ width: `${r.confidence}%` }}
-                        />
-                        <span className="kv-conf-text">{r.confidence}%</span>
-                      </div>
-                    </td>
-                    <td>{currency === 'INR' ? '₹' : '$'}{r.entryPrice.toFixed(2)}</td>
-                    <td className="kv-sl">{currency === 'INR' ? '₹' : '$'}{r.stopLoss.toFixed(2)}</td>
-                    <td className="kv-tp">{currency === 'INR' ? '₹' : '$'}{r.takeProfit.toFixed(2)}</td>
-                    <td>{trendIcon(r.structure.trend4h)}</td>
-                    <td>{trendIcon(r.structure.trend5m)}</td>
-                    <td>{r.structure.aligned ? '✅' : '❌'}</td>
-                    <td>{r.structure.trendStrength.toFixed(0)}</td>
-                    <td>
-                      {r.riskChecks.filter(c => !c.passed).length > 0
-                        ? <span className="kv-risk-fail">❌ {r.riskChecks.filter(c => !c.passed).length}</span>
-                        : <span className="kv-risk-pass">✅</span>
-                      }
-                    </td>
-                  </tr>
-                ))}
+                {results.map((r, idx) => {
+                  const rr = r.action !== 'hold' && r.stopLoss !== r.entryPrice
+                    ? Math.abs((r.takeProfit - r.entryPrice) / (r.entryPrice - r.stopLoss))
+                    : 0;
+                  const isExpanded = expandedRow === r.symbol;
+                  return (
+                    <>
+                      <tr
+                        key={r.symbol}
+                        className={`krivis-row ${r.riskBlocked ? 'kv-row-blocked' : ''} ${isExpanded ? 'kv-row-expanded' : ''}`}
+                        onClick={() => setExpandedRow(isExpanded ? null : r.symbol)}
+                        title="Click to expand entry/exit details"
+                      >
+                        <td>{idx + 1}</td>
+                        <td className="kv-sym" onClick={(e) => { e.stopPropagation(); onSelectSymbol(r.symbol); }}>{r.symbol}</td>
+                        <td>{actionBadge(r.action, r.riskBlocked)}</td>
+                        <td>
+                          <div className="kv-conf-bar">
+                            <div
+                              className={`kv-conf-fill ${r.action === 'buy' ? 'kv-green' : r.action === 'sell' ? 'kv-red' : 'kv-gray'}`}
+                              style={{ width: `${r.confidence}%` }}
+                            />
+                            <span className="kv-conf-text">{r.confidence}%</span>
+                          </div>
+                        </td>
+                        <td className="kv-entry-zone">
+                          <span className="kv-entry-range">{cs(currency)}{r.entryLow.toFixed(2)}</span>
+                          <span className="kv-entry-dash">–</span>
+                          <span className="kv-entry-range">{cs(currency)}{r.entryHigh.toFixed(2)}</span>
+                        </td>
+                        <td className="kv-sl">{cs(currency)}{r.stopLoss.toFixed(2)}</td>
+                        <td className="kv-tp">{cs(currency)}{r.takeProfit.toFixed(2)}</td>
+                        <td className={rr >= 2 ? 'kv-rr-good' : rr >= 1 ? 'kv-rr-ok' : 'kv-rr-bad'}>
+                          {rr > 0 ? `1:${rr.toFixed(1)}` : '—'}
+                        </td>
+                        <td>{trendIcon(r.structure.trend4h)}</td>
+                        <td>{trendIcon(r.structure.trend5m)}</td>
+                        <td>{r.structure.trendStrength.toFixed(0)}</td>
+                        <td>
+                          {r.riskChecks.filter(c => !c.passed).length > 0
+                            ? <span className="kv-risk-fail">❌ {r.riskChecks.filter(c => !c.passed).length}</span>
+                            : <span className="kv-risk-pass">✅</span>
+                          }
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr key={`${r.symbol}-detail`} className="kv-detail-row">
+                          <td colSpan={12}>
+                            <div className="kv-detail-grid">
+                              <div className="kv-detail-section">
+                                <div className="kv-detail-label">📍 Entry Zone</div>
+                                <div className="kv-detail-value">
+                                  {cs(currency)}{r.entryLow.toFixed(2)} – {cs(currency)}{r.entryHigh.toFixed(2)}
+                                  <span className="kv-detail-sub"> (current: {cs(currency)}{r.entryPrice.toFixed(2)})</span>
+                                </div>
+                              </div>
+                              <div className="kv-detail-section">
+                                <div className="kv-detail-label">🛡️ Stop Loss</div>
+                                <div className="kv-detail-value kv-sl">
+                                  {cs(currency)}{r.stopLoss.toFixed(2)}
+                                  <span className="kv-detail-sub"> ({((r.stopLoss / r.entryPrice - 1) * 100).toFixed(1)}%)</span>
+                                </div>
+                              </div>
+                              <div className="kv-detail-section">
+                                <div className="kv-detail-label">🎯 Take Profit</div>
+                                <div className="kv-detail-value kv-tp">
+                                  {cs(currency)}{r.takeProfit.toFixed(2)}
+                                  <span className="kv-detail-sub"> ({r.action === 'buy' ? '+' : ''}{((r.takeProfit / r.entryPrice - 1) * 100).toFixed(1)}%)</span>
+                                </div>
+                              </div>
+                              <div className="kv-detail-section">
+                                <div className="kv-detail-label">📐 Risk : Reward</div>
+                                <div className={`kv-detail-value ${rr >= 2 ? 'kv-rr-good' : 'kv-rr-ok'}`}>
+                                  1 : {rr.toFixed(2)}
+                                </div>
+                              </div>
+                              <div className="kv-detail-section kv-detail-wide">
+                                <div className="kv-detail-label">🚪 Exit Plan</div>
+                                <div className="kv-detail-value kv-detail-exit">{r.exitPlan}</div>
+                              </div>
+                              <div className="kv-detail-section kv-detail-wide">
+                                <div className="kv-detail-label">🏗️ Structure</div>
+                                <div className="kv-detail-value">
+                                  4H: {trendIcon(r.structure.trend4h)} {r.structure.trend4h}
+                                  {' · '}5m: {trendIcon(r.structure.trend5m)} {r.structure.trend5m}
+                                  {' · '}ADX: {r.structure.trendStrength.toFixed(1)}
+                                  {' · '}Aligned: {r.structure.aligned ? '✅' : '❌'}
+                                  {r.structure.isBreakout && ' · ⚡ Breakout'}
+                                  {' · '}S: {cs(currency)}{r.structure.supportLevel.toFixed(2)}
+                                  {' · '}R: {cs(currency)}{r.structure.resistanceLevel.toFixed(2)}
+                                </div>
+                              </div>
+                              <div className="kv-detail-section kv-detail-wide">
+                                <div className="kv-detail-label">💡 Reasoning</div>
+                                <div className="kv-detail-value kv-detail-reason">{r.reasoning}</div>
+                              </div>
+                              {r.riskChecks.length > 0 && (
+                                <div className="kv-detail-section kv-detail-wide">
+                                  <div className="kv-detail-label">🛡️ Risk Checks</div>
+                                  <div className="kv-detail-value">
+                                    {r.riskChecks.map(c => (
+                                      <span key={c.check} className={c.passed ? 'kv-check-pass' : 'kv-check-fail'}>
+                                        {c.passed ? '✅' : '❌'} {c.check}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -286,11 +394,14 @@ export function KrivisStockPanel({ market, currency, onSelectSymbol }: Props) {
                   <span className="kv-diary-time">{new Date(entry.timestamp).toLocaleString()}</span>
                 </div>
                 <div className="kv-diary-detail">
-                  <span>Entry: {currency === 'INR' ? '₹' : '$'}{entry.entryPrice.toFixed(2)}</span>
-                  <span>SL: {currency === 'INR' ? '₹' : '$'}{entry.stopLoss.toFixed(2)}</span>
-                  <span>TP: {currency === 'INR' ? '₹' : '$'}{entry.takeProfit.toFixed(2)}</span>
-                  <span>4H: {entry.structure.trend4h} | 5m: {entry.structure.trend5m}</span>
+                  <span>Entry: {cs(currency)}{entry.entryPrice.toFixed(2)}</span>
+                  <span>Zone: {cs(currency)}{(entry.entryLow || entry.entryPrice).toFixed(2)}–{cs(currency)}{(entry.entryHigh || entry.entryPrice).toFixed(2)}</span>
+                  <span>SL: {cs(currency)}{entry.stopLoss.toFixed(2)}</span>
+                  <span>TP: {cs(currency)}{entry.takeProfit.toFixed(2)}</span>
                 </div>
+                {entry.exitPlan && (
+                  <div className="kv-diary-exit">🚪 {entry.exitPlan}</div>
+                )}
                 {entry.riskBlocked && (
                   <div className="kv-diary-risk">
                     {entry.riskChecks.filter(c => !c.passed).map(c => (

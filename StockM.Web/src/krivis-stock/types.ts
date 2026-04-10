@@ -47,8 +47,11 @@ export interface KrivisSignal {
   action: KrivisAction;
   confidence: number;          // 0–100
   entryPrice: number;
+  entryLow: number;            // entry zone lower bound
+  entryHigh: number;           // entry zone upper bound
   stopLoss: number;
   takeProfit: number;
+  exitPlan: string;            // human-readable exit strategy
   reasoning: string;
   structure: StructureResult;
   riskChecks: RiskCheckResult[];
@@ -79,8 +82,11 @@ export interface DiaryEntry {
   action: KrivisAction;
   confidence: number;
   entryPrice: number;
+  entryLow: number;
+  entryHigh: number;
   stopLoss: number;
   takeProfit: number;
+  exitPlan: string;
   reasoning: string;
   riskBlocked: boolean;
   riskChecks: RiskCheckResult[];
