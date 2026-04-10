@@ -165,6 +165,175 @@ export function vwap(quotes: StockQuote[]): number[] {
   return result;
 }
 
+// ---------------------------------------------------------------------------
+// ADX (Average Directional Index) — measures trend strength
+// ---------------------------------------------------------------------------
+export function adx(quotes: StockQuote[], period = 14): number[] {
+  const result = new Array(quotes.length).fill(0);
+  if (quotes.length < period + 1) return result;
+
+  const plusDM: number[] = [];
+  const minusDM: number[] = [];
+  const tr: number[] = [];
+
+  for (let i = 1; i < quotes.length; i++) {
+    const h = quotes[i].high;
+    const l = quotes[i].low;
+    const prevH = quotes[i - 1].high;
+    const prevL = quotes[i - 1].low;
+    const prevC = quotes[i - 1].close;
+
+    const upMove = h - prevH;
+    const downMove = prevL - l;
+    plusDM.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    minusDM.push(downMove > upMove && downMove > 0 ? downMove : 0);
+    tr.push(Math.max(h - l, Math.abs(h - prevC), Math.abs(l - prevC)));
+  }
+
+  if (tr.length < period) return result;
+
+  // Wilder smoothing
+  let atrVal = 0;
+  let plusDMSmooth = 0;
+  let minusDMSmooth = 0;
+  for (let i = 0; i < period; i++) {
+    atrVal += tr[i];
+    plusDMSmooth += plusDM[i];
+    minusDMSmooth += minusDM[i];
+  }
+
+  const dxList: number[] = [];
+  const computeDX = () => {
+    const plusDI = atrVal ? (plusDMSmooth / atrVal) * 100 : 0;
+    const minusDI = atrVal ? (minusDMSmooth / atrVal) * 100 : 0;
+    const diSum = plusDI + minusDI;
+    return diSum ? (Math.abs(plusDI - minusDI) / diSum) * 100 : 0;
+  };
+  dxList.push(computeDX());
+
+  for (let i = period; i < tr.length; i++) {
+    atrVal = atrVal - atrVal / period + tr[i];
+    plusDMSmooth = plusDMSmooth - plusDMSmooth / period + plusDM[i];
+    minusDMSmooth = minusDMSmooth - minusDMSmooth / period + minusDM[i];
+    dxList.push(computeDX());
+  }
+
+  // ADX is Wilder-smoothed DX
+  if (dxList.length >= period) {
+    let adxVal = 0;
+    for (let i = 0; i < period; i++) adxVal += dxList[i];
+    adxVal /= period;
+    const startIdx = period * 2; // period for TR + period for DX smoothing
+    if (startIdx < quotes.length) result[startIdx] = adxVal;
+
+    for (let i = period; i < dxList.length; i++) {
+      adxVal = (adxVal * (period - 1) + dxList[i]) / period;
+      const idx = i + period; // offset by first period
+      if (idx < quotes.length) result[idx] = adxVal;
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// +DI / -DI lines (needed for ADX interpretation)
+// ---------------------------------------------------------------------------
+export function directionalIndicators(quotes: StockQuote[], period = 14): { plusDI: number[]; minusDI: number[] } {
+  const plusDI = new Array(quotes.length).fill(0);
+  const minusDI = new Array(quotes.length).fill(0);
+  if (quotes.length < period + 1) return { plusDI, minusDI };
+
+  const plusDMArr: number[] = [];
+  const minusDMArr: number[] = [];
+  const trArr: number[] = [];
+
+  for (let i = 1; i < quotes.length; i++) {
+    const h = quotes[i].high, l = quotes[i].low;
+    const prevH = quotes[i - 1].high, prevL = quotes[i - 1].low, prevC = quotes[i - 1].close;
+    const upMove = h - prevH, downMove = prevL - l;
+    plusDMArr.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    minusDMArr.push(downMove > upMove && downMove > 0 ? downMove : 0);
+    trArr.push(Math.max(h - l, Math.abs(h - prevC), Math.abs(l - prevC)));
+  }
+
+  if (trArr.length < period) return { plusDI, minusDI };
+
+  let atrSmooth = 0, pSmooth = 0, mSmooth = 0;
+  for (let i = 0; i < period; i++) { atrSmooth += trArr[i]; pSmooth += plusDMArr[i]; mSmooth += minusDMArr[i]; }
+
+  const setDI = (idx: number) => {
+    plusDI[idx] = atrSmooth ? (pSmooth / atrSmooth) * 100 : 0;
+    minusDI[idx] = atrSmooth ? (mSmooth / atrSmooth) * 100 : 0;
+  };
+  setDI(period);
+
+  for (let i = period; i < trArr.length; i++) {
+    atrSmooth = atrSmooth - atrSmooth / period + trArr[i];
+    pSmooth = pSmooth - pSmooth / period + plusDMArr[i];
+    mSmooth = mSmooth - mSmooth / period + minusDMArr[i];
+    if (i + 1 < quotes.length) setDI(i + 1);
+  }
+  return { plusDI, minusDI };
+}
+
+// ---------------------------------------------------------------------------
+// OBV (On-Balance Volume) — volume flow confirmation
+// ---------------------------------------------------------------------------
+export function obv(quotes: StockQuote[]): number[] {
+  const result = new Array(quotes.length).fill(0);
+  if (quotes.length === 0) return result;
+  result[0] = 0;
+  for (let i = 1; i < quotes.length; i++) {
+    if (quotes[i].close > quotes[i - 1].close) {
+      result[i] = result[i - 1] + quotes[i].volume;
+    } else if (quotes[i].close < quotes[i - 1].close) {
+      result[i] = result[i - 1] - quotes[i].volume;
+    } else {
+      result[i] = result[i - 1];
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Stochastic RSI — more sensitive momentum exhaustion
+// ---------------------------------------------------------------------------
+export function stochasticRSI(quotes: StockQuote[], rsiPeriod = 14, stochPeriod = 14, kSmooth = 3, dSmooth = 3): { k: number[]; d: number[] } {
+  const rsiVals = rsi(quotes, rsiPeriod);
+  const k = new Array(quotes.length).fill(0);
+  const d = new Array(quotes.length).fill(0);
+
+  // Raw Stoch RSI
+  const rawK = new Array(quotes.length).fill(0);
+  for (let i = 0; i < quotes.length; i++) {
+    if (rsiVals[i] === 0) continue;
+    const start = Math.max(0, i - stochPeriod + 1);
+    let lo = Infinity, hi = -Infinity;
+    let valid = false;
+    for (let j = start; j <= i; j++) {
+      if (rsiVals[j] !== 0) { lo = Math.min(lo, rsiVals[j]); hi = Math.max(hi, rsiVals[j]); valid = true; }
+    }
+    if (valid && hi !== lo) rawK[i] = ((rsiVals[i] - lo) / (hi - lo)) * 100;
+    else if (valid) rawK[i] = 50;
+  }
+
+  // Smooth %K with SMA
+  for (let i = kSmooth - 1; i < quotes.length; i++) {
+    let sum = 0, cnt = 0;
+    for (let j = i - kSmooth + 1; j <= i; j++) { if (rawK[j] !== 0) { sum += rawK[j]; cnt++; } }
+    if (cnt > 0) k[i] = sum / cnt;
+  }
+
+  // %D is SMA of smoothed %K
+  for (let i = kSmooth - 1 + dSmooth - 1; i < quotes.length; i++) {
+    let sum = 0, cnt = 0;
+    for (let j = i - dSmooth + 1; j <= i; j++) { if (k[j] !== 0) { sum += k[j]; cnt++; } }
+    if (cnt > 0) d[i] = sum / cnt;
+  }
+
+  return { k, d };
+}
+
 export function computeFullIndicators(quotes: StockQuote[]): FullIndicatorData {
   const sma20 = sma(quotes, 20);
   const sma50 = sma(quotes, 50);

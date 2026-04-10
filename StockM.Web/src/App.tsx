@@ -12,11 +12,12 @@ import { TopPicksPanel } from './components/TopPicksPanel';
 import { IndicatorScreener } from './components/IndicatorScreener';
 import { InsightsPanel } from './components/InsightsPanel';
 import { ChatPanel } from './components/ChatPanel';
+import { KrivisStockPanel } from './krivis-stock/KrivisStockPanel';
 import { useStockData } from './hooks/useStockData';
 import { computeSAStyleData } from './services/quantScoring';
 import './App.css';
 
-type SidebarTab = 'insights' | 'technical' | 'fundamental' | 'quant' | 'risk' | 'trade' | 'picks' | 'vwap' | 'guide' | 'chat';
+type SidebarTab = 'insights' | 'technical' | 'fundamental' | 'quant' | 'risk' | 'trade' | 'picks' | 'krivis' | 'vwap' | 'guide' | 'chat';
 
 // Read API keys from environment (set in .env, never committed to git)
 const AV_KEY = import.meta.env.VITE_AV_KEY || '';
@@ -202,8 +203,10 @@ export default function App() {
             <button className={`sidebar-tab ${activeTab === 'picks' ? 'active' : ''}`}
               onClick={() => setActiveTab('picks')}>
               🔥 Top Picks
-            </button>
-            <button className={`sidebar-tab ${activeTab === 'vwap' ? 'active' : ''}`}
+            </button>            <button className={`sidebar-tab ${activeTab === 'krivis' ? 'active' : ''}`}
+              onClick={() => setActiveTab('krivis')}>
+              🧠 KriVi's
+            </button>            <button className={`sidebar-tab ${activeTab === 'vwap' ? 'active' : ''}`}
               onClick={() => setActiveTab('vwap')}>
               � Screener
             </button>
@@ -285,6 +288,14 @@ export default function App() {
 
           {activeTab === 'picks' && (
             <TopPicksPanel
+              market={market}
+              currency={mktConfig.currency}
+              onSelectSymbol={handleWatchlistSelect}
+            />
+          )}
+
+          {activeTab === 'krivis' && (
+            <KrivisStockPanel
               market={market}
               currency={mktConfig.currency}
               onSelectSymbol={handleWatchlistSelect}
