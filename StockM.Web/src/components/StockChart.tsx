@@ -102,41 +102,6 @@ function createBaseChart(container: HTMLElement, height: number): IChartApi {
   });
 }
 
-/** Remove TradingView attribution watermark from chart container */
-function removeTVWatermark(container: HTMLElement) {
-  const hide = () => {
-    // The TV logo is in a <table> positioned absolute at bottom-left with z-index 3
-    // Also target any <a>, <div>, or <table> that contains tradingview references
-    container.querySelectorAll('table').forEach(t => {
-      const el = t as HTMLElement;
-      const style = getComputedStyle(el);
-      // The TV attribution table is always position:absolute, bottom:0, left:0
-      if (style.position === 'absolute' && (style.left === '0px' || style.bottom === '0px' || style.zIndex === '3')) {
-        if (el.innerHTML.includes('tradingview') || el.innerHTML.includes('TradingView') || el.querySelector('a') || el.querySelector('svg')) {
-          el.style.cssText = 'display:none!important;visibility:hidden!important;';
-        }
-      }
-    });
-    // Fallback: hide any anchor with tradingview
-    container.querySelectorAll('a').forEach(a => {
-      const href = a.getAttribute('href') || '';
-      if (href.includes('tradingview') || a.textContent?.includes('TradingView')) {
-        (a as HTMLElement).style.cssText = 'display:none!important;';
-        const parent = a.closest('table') || a.closest('div');
-        if (parent && parent !== container) (parent as HTMLElement).style.cssText = 'display:none!important;';
-      }
-    });
-  };
-  // Run multiple times to catch deferred renders
-  hide();
-  setTimeout(hide, 100);
-  setTimeout(hide, 300);
-  setTimeout(hide, 800);
-  const mo = new MutationObserver(hide);
-  mo.observe(container, { childList: true, subtree: true });
-  setTimeout(() => mo.disconnect(), 3000);
-}
-
 /** Aggregate daily candles into weekly or monthly candles */
 function aggregateCandles(dailyQuotes: StockQuote[], period: 'week' | 'month'): StockQuote[] {
   if (dailyQuotes.length === 0) return [];
@@ -421,7 +386,6 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
 
     // Auto-fit
     chart.timeScale().fitContent();
-    removeTVWatermark(container);
 
     // Resize handler
     const handleResize = () => {
@@ -464,7 +428,6 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
     addLevel(50, '#475569');
 
     chart.timeScale().fitContent();
-    removeTVWatermark(container);
     const ro = new ResizeObserver(() => { if (container.clientWidth > 0) chart.applyOptions({ width: container.clientWidth }); });
     ro.observe(container);
 
@@ -507,7 +470,6 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
     histSeries.setData(histData);
 
     chart.timeScale().fitContent();
-    removeTVWatermark(container);
     const ro = new ResizeObserver(() => { if (container.clientWidth > 0) chart.applyOptions({ width: container.clientWidth }); });
     ro.observe(container);
 
@@ -549,7 +511,6 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
     kLine.createPriceLine({ price: 20, color: '#22c55e', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: '' });
 
     chart.timeScale().fitContent();
-    removeTVWatermark(container);
     const ro = new ResizeObserver(() => { if (container.clientWidth > 0) chart.applyOptions({ width: container.clientWidth }); });
     ro.observe(container);
 
@@ -589,7 +550,6 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
     atrSeries.setData(atrData);
 
     chart.timeScale().fitContent();
-    removeTVWatermark(container);
     const ro = new ResizeObserver(() => { if (container.clientWidth > 0) chart.applyOptions({ width: container.clientWidth }); });
     ro.observe(container);
 
