@@ -126,15 +126,8 @@ body {
 
 /* ======================== CHART ======================== */
 /* Hide lightweight-charts TradingView attribution watermark */
-.chart-main table[style*="position"],
-.chart-main table[style*="z-index"],
-.subchart table[style*="position"],
-.subchart table[style*="z-index"],
 .chart-container a[href*="tradingview"],
-.chart-container a[target="_blank"],
-.chart-container td > a,
-.chart-main div > table:last-of-type,
-.subchart div > table:last-of-type {
+.chart-container a[target="_blank"][href*="tradingview"] {
   display: none !important;
   visibility: hidden !important;
   width: 0 !important;

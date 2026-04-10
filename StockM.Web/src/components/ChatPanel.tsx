@@ -138,10 +138,11 @@ type Intent =
   | { type: 'best_swing' }
   | { type: 'general_question'; query: string };
 
-const STOP_WORDS = new Set(['is','a','the','and','for','how','why','what','can','does','this','that','with','from','best','top','good','bad','should','i','buy','sell','it','do','to','in','of','on','my','me','will','be','an','or','not','are','was','have','has','been','would','could','any','there','about','stock','share','crypto','coin','token','market']);
+const STOP_WORDS = new Set(['is','a','the','and','for','how','why','what','can','does','this','that','with','from','best','top','good','bad','should','i','buy','sell','it','do','to','in','of','on','my','me','will','be','an','or','not','are','was','have','has','been','would','could','any','there','about','stock','share','crypto','coin','token','market','which','when','where','who','whom','whose','much','many','more','most','some','all','each','every','both','few','no','nor','so','than','too','very','just','also','now','then','here','only','own','same','other','such','into','over','after','before','between','through','during','above','below','up','down','out','off','again','further','once','new','old','like','well','still','even','back','let','us','our','your','they','them','their','its','he','she','his','her','we','give','made','make','way','may','say','said','did','get','got','go','goes','went','come','came','take','took','use','used','know','think','see','look','want','need','find','tell','ask','work','try','call','keep','help','start','turn','show','play','move','live','believe','feel','set','put','run','hold','bring','happen','write','provide','sit','stand','lose','pay','meet','include','continue','learn','change','lead','understand','watch','follow','stop','create','speak','read','allow','add','spend','grow','open','walk','win','offer','remember','love','consider','appear','wait','serve','die','send','expect','build','stay','fall','cut','reach','remain','suggest','raise','pass','long','short','term','day','week','month','year','today','yesterday','tomorrow','current','next','last','first','second','time','algo','algorithm','strategy','indicator','indicators','trading','invest','investing','investment','portfolio','risk','analysis','analyze','money','profit','loss','gain','return','returns','price','prices','value','high','low','close','open','volume','chart','graph','data','pattern','trend','signal','signals','entry','exit','target','support','resistance','level','levels','point','points','average','moving','simple','exponential','relative','strength','divergence','convergence','band','bands','bollinger','stochastic','momentum','breakout','reversal','correction','bear','bull','bullish','bearish','neutral','oversold','overbought','volatile','volatility']);
 
 function parseIntent(input: string, _currentSymbol: string): Intent {
   const lower = input.toLowerCase().trim();
+  const original = input.trim(); // preserve original casing
 
   // Explain indicators
   for (const key of Object.keys(INDICATOR_KB)) {
@@ -166,11 +167,20 @@ function parseIntent(input: string, _currentSymbol: string): Intent {
   if (lower.includes('risk reward') || lower.includes('risk-reward') || lower.includes('r:r')) return { type: 'explain_trading', topic: 'risk-reward' };
 
   // Best for intraday / swing
-  if ((lower.includes('best') || lower.includes('top') || lower.includes('recommend')) && lower.includes('intraday')) {
+  if ((lower.includes('best') || lower.includes('top') || lower.includes('recommend') || lower.includes('which')) && lower.includes('intraday')) {
     return { type: 'best_intraday' };
   }
-  if ((lower.includes('best') || lower.includes('top') || lower.includes('recommend')) && (lower.includes('swing') || lower.includes('short term'))) {
+  if ((lower.includes('best') || lower.includes('top') || lower.includes('recommend') || lower.includes('which')) && (lower.includes('swing') || lower.includes('short term'))) {
     return { type: 'best_swing' };
+  }
+
+  // General algo/strategy/market questions → general_question (intercept BEFORE stock extraction)
+  if (/\b(which|what|best|top|recommend)\b/.test(lower) && /\b(algo|algorithm|strategy|indicator|method|approach|model|technique)\b/.test(lower)) {
+    return { type: 'general_question', query: input };
+  }
+  if (/\b(how to|how do|what is|what are|explain|tell me)\b/.test(lower) && !/\b(analyze|check|scan|review)\b/.test(lower)) {
+    // Pure knowledge question — don't try to extract a ticker
+    return { type: 'general_question', query: input };
   }
 
   // Compare stocks (try name resolution)
@@ -196,7 +206,7 @@ function parseIntent(input: string, _currentSymbol: string): Intent {
 
   // "is X good buy", "should I buy X", "X is good?", "buy X?", "sell X?"
   // Try to find a company/ticker name in the sentence
-  const resolved = tryExtractStockFromSentence(lower);
+  const resolved = tryExtractStockFromSentence(lower, original);
   if (resolved) {
     return { type: 'analyze_stock', symbol: resolved };
   }
@@ -210,18 +220,28 @@ function parseIntent(input: string, _currentSymbol: string): Intent {
 }
 
 /** Extract a stock/crypto name from a natural language sentence */
-function tryExtractStockFromSentence(sentence: string): string | null {
+function tryExtractStockFromSentence(sentence: string, original?: string): string | null {
   // First try multi-word company names (longest match first)
   const sortedNames = Object.keys(NAME_TO_TICKER).sort((a, b) => b.length - a.length);
   for (const name of sortedNames) {
     if (sentence.includes(name)) return NAME_TO_TICKER[name];
   }
-  // Then try remaining non-stop-words as potential tickers
-  const words = sentence.split(/\s+/).filter(w => !STOP_WORDS.has(w) && w.length >= 2);
-  for (const word of words) {
-    const cleaned = word.replace(/[?!.,]/g, '');
-    const sym = resolveSymbol(cleaned);
-    if (sym && sym.length >= 2) return sym;
+  // Then try remaining non-stop-words, but ONLY if the word was ALL-CAPS in original input
+  // (natural language "which" vs intentional ticker "AAPL")
+  const origWords = (original || sentence).split(/\s+/);
+  const lowerWords = sentence.split(/\s+/);
+  for (let i = 0; i < lowerWords.length; i++) {
+    const w = lowerWords[i];
+    const ow = origWords[i] || w;
+    if (STOP_WORDS.has(w) || w.length < 2) continue;
+    const cleaned = ow.replace(/[?!.,]/g, '');
+    // Accept as ticker only if: (a) it was ALL CAPS in original, or (b) it's a known name/ticker mapping
+    if (/^[A-Z]{2,10}(-USD)?$/.test(cleaned)) {
+      return cleaned;
+    }
+    // Also check if it's a known company name (case-insensitive)
+    const resolved = NAME_TO_TICKER[w.replace(/[?!.,]/g, '')];
+    if (resolved) return resolved;
   }
   return null;
 }
