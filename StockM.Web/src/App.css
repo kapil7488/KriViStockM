@@ -125,6 +125,13 @@ body {
 .card-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text-primary); }
 
 /* ======================== CHART ======================== */
+/* Hide lightweight-charts TradingView attribution watermark */
+.chart-main a[href*="tradingview"],
+.chart-main a[target="_blank"],
+.subchart a[href*="tradingview"],
+.subchart a[target="_blank"] {
+  display: none !important;
+}
 .chart-container { background: var(--bg-secondary); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; }
 .chart-price-header {
   display: flex; justify-content: space-between; align-items: center;
@@ -138,6 +145,33 @@ body {
 .chart-change.down { color: var(--accent-red); }
 .chart-ohlc { display: flex; gap: 12px; font-size: 11px; color: var(--text-muted); flex-wrap: wrap; }
 .chart-ohlc b { color: var(--text-secondary); }
+
+/* Period High/Low Stats */
+.chart-period-hl {
+  display: flex; align-items: center; gap: 14px; padding: 6px 14px;
+  border-bottom: 1px solid var(--border); font-size: 11px;
+  background: rgba(15, 23, 42, 0.3);
+}
+.chart-period-hl .period-label {
+  font-weight: 700; color: var(--text-primary); font-size: 10px;
+  background: rgba(99, 102, 241, 0.15); color: #818cf8;
+  padding: 1px 6px; border-radius: 4px; white-space: nowrap;
+}
+.chart-period-hl .period-high { color: #22d3ee; white-space: nowrap; }
+.chart-period-hl .period-high b { color: #22d3ee; }
+.chart-period-hl .period-low { color: #f472b6; white-space: nowrap; }
+.chart-period-hl .period-low b { color: #f472b6; }
+.chart-period-hl small { color: var(--text-muted); margin-left: 4px; font-size: 9px; }
+.chart-period-hl .period-range-bar { flex: 1; min-width: 60px; display: flex; align-items: center; }
+.chart-period-hl .range-track {
+  position: relative; width: 100%; height: 4px; background: rgba(100, 116, 139, 0.25);
+  border-radius: 2px; overflow: visible;
+}
+.chart-period-hl .range-fill {
+  position: absolute; top: 50%; width: 8px; height: 8px;
+  background: #f59e0b; border-radius: 50%; transform: translate(-50%, -50%);
+  box-shadow: 0 0 4px rgba(245, 158, 11, 0.5);
+}
 
 /* Toolbar */
 .chart-toolbar {
@@ -1402,6 +1436,102 @@ body {
   .chart-price { font-size: 16px; }
   .chart-change { font-size: 11px; }
   .chart-ohlc { gap: 8px; font-size: 9px; }
+}
+
+/* ======================== CHAT PANEL ======================== */
+.chat-panel {
+  display: flex; flex-direction: column; height: calc(100vh - 220px);
+  min-height: 400px; max-height: 700px; padding-bottom: 0 !important;
+}
+.chat-panel .card-title { flex-shrink: 0; }
+
+.chat-messages {
+  flex: 1; overflow-y: auto; padding: 8px 4px; display: flex;
+  flex-direction: column; gap: 8px; scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+.chat-messages::-webkit-scrollbar { width: 4px; }
+.chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+.chat-msg { display: flex; }
+.chat-msg.user { justify-content: flex-end; }
+.chat-msg.assistant { justify-content: flex-start; }
+
+.chat-bubble {
+  max-width: 88%; display: flex; gap: 6px; align-items: flex-start;
+}
+.chat-msg.user .chat-bubble { flex-direction: row-reverse; }
+
+.chat-avatar { font-size: 18px; flex-shrink: 0; margin-top: 2px; }
+
+.chat-content {
+  padding: 8px 12px; border-radius: 12px; font-size: 12px;
+  line-height: 1.55; word-break: break-word;
+}
+.chat-msg.user .chat-content {
+  background: var(--accent); color: #fff; border-bottom-right-radius: 4px;
+}
+.chat-msg.assistant .chat-content {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-bottom-left-radius: 4px; color: var(--text-primary);
+}
+
+.chat-content h3.chat-h3 { font-size: 13px; font-weight: 700; margin: 6px 0 4px; color: var(--text-primary); }
+.chat-content h4.chat-h4 { font-size: 12px; font-weight: 700; margin: 4px 0 2px; color: var(--accent); }
+.chat-content .chat-bullet { display: block; padding-left: 4px; margin: 1px 0; }
+.chat-content strong { color: var(--text-primary); font-weight: 700; }
+.chat-content em { color: var(--text-muted); font-style: italic; }
+
+.chat-thinking { display: flex; gap: 4px; padding: 10px 14px !important; }
+.chat-thinking .dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted);
+  animation: chatDot 1.2s ease-in-out infinite;
+}
+.chat-thinking .dot:nth-child(2) { animation-delay: 0.2s; }
+.chat-thinking .dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes chatDot {
+  0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
+  30% { opacity: 1; transform: scale(1.2); }
+}
+
+.chat-suggestions {
+  display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 4px; flex-shrink: 0;
+}
+.chat-suggest-btn {
+  padding: 5px 10px; border-radius: 16px; border: 1px solid var(--border);
+  background: var(--bg-card); color: var(--text-primary); font-size: 10px;
+  cursor: pointer; transition: all .15s; white-space: nowrap;
+}
+.chat-suggest-btn:hover { border-color: var(--accent); background: rgba(59,130,246,.08); }
+
+.chat-input-row {
+  display: flex; gap: 6px; padding: 8px 4px 12px; flex-shrink: 0;
+  border-top: 1px solid var(--border);
+}
+.chat-input {
+  flex: 1; padding: 8px 12px; border-radius: 20px; border: 1px solid var(--border);
+  background: var(--bg-card); color: var(--text-primary); font-size: 12px;
+  outline: none; transition: border-color .15s;
+}
+.chat-input:focus { border-color: var(--accent); }
+.chat-input::placeholder { color: var(--text-muted); }
+.chat-input:disabled { opacity: .6; }
+
+.chat-send-btn {
+  width: 36px; height: 36px; border-radius: 50%; border: none;
+  background: var(--accent); color: #fff; font-size: 16px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: opacity .15s;
+}
+.chat-send-btn:disabled { opacity: .4; cursor: not-allowed; }
+.chat-send-btn:hover:not(:disabled) { opacity: .85; }
+
+@media (max-width: 600px) {
+  .chat-panel { height: calc(100vh - 280px); min-height: 350px; }
+  .chat-content { font-size: 11px; padding: 7px 10px; }
+  .chat-suggest-btn { font-size: 9px; padding: 4px 8px; }
+  .chat-input { font-size: 11px; padding: 7px 10px; }
+}
   .chart-toolbar {
     padding: 4px 8px; gap: 2px;
     overflow-x: auto; -webkit-overflow-scrolling: touch;

@@ -701,7 +701,10 @@ export async function fetchFinnhubQuote(symbol: string, token: string): Promise<
 export async function fetchYahooHistorical(symbol: string, market?: Market): Promise<StockBar> {
   const ticker = resolveYahooTicker(symbol, market);
 
-  const url = `${YAHOO_URL}/${encodeURIComponent(ticker)}?interval=1d&range=2y`;
+  // Use period1/period2 for maximum data — range=max is unreliable via chart API.
+  // period1=0 means "from the very beginning"; period2=now.
+  const now = Math.floor(Date.now() / 1000);
+  const url = `${YAHOO_URL}/${encodeURIComponent(ticker)}?interval=1d&period1=0&period2=${now}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Yahoo Finance historical returned ${res.status}`);
 

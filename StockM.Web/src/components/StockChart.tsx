@@ -147,6 +147,24 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
     return { quotes: displayQuotes, indicators: ind };
   }, [data, settings.timeRange, settings.interval, isIntraday, intradayQuotes]);
 
+  // Period high/low based on displayed data
+  const periodStats = useMemo(() => {
+    const src = quotes.length > 0 ? quotes : data.quotes;
+    let high = -Infinity, low = Infinity, highDate = '', lowDate = '';
+    for (const q of src) {
+      if (q.high > high) { high = q.high; highDate = q.timestamp; }
+      if (q.low < low) { low = q.low; lowDate = q.timestamp; }
+    }
+    const rangeLabel = settings.timeRange === 'ALL' ? 'All-Time'
+      : settings.timeRange === '5Y' ? '5Y'
+      : settings.timeRange === '1Y' ? '1Y'
+      : settings.timeRange === '6M' ? '6M'
+      : settings.timeRange === '3M' ? '3M'
+      : settings.timeRange === '1M' ? '1M'
+      : settings.timeRange === '1W' ? '1W' : '1D';
+    return { high, low, highDate, lowDate, rangeLabel };
+  }, [quotes, data.quotes, settings.timeRange]);
+
   // Map index from display quotes into daily indicator arrays
   const getIndicatorIdx = useCallback((i: number) => {
     const dailyCount = data.quotes.length;
@@ -283,6 +301,26 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
       addPriceLine(signal.takeProfit, '#22c55e', `TP ${currency}${signal.takeProfit.toFixed(2)}`);
     }
 
+    // Period High / Low price lines
+    if (periodStats.high > 0 && periodStats.low < Infinity) {
+      (priceSeries as any).createPriceLine({
+        price: periodStats.high,
+        color: '#22d3ee',
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        axisLabelVisible: true,
+        title: `${periodStats.rangeLabel} H`,
+      });
+      (priceSeries as any).createPriceLine({
+        price: periodStats.low,
+        color: '#f472b6',
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        axisLabelVisible: true,
+        title: `${periodStats.rangeLabel} L`,
+      });
+    }
+
     // Crosshair legend
     chart.subscribeCrosshairMove(param => {
       if (!param.time || !param.seriesData?.size) {
@@ -316,7 +354,7 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
       chart.remove();
       mainChartRef.current = null;
     };
-  }, [quotes, indicators, settings.chartType, settings.overlays, signal, currency, getIndicatorIdx]);
+  }, [quotes, indicators, settings.chartType, settings.overlays, signal, currency, getIndicatorIdx, periodStats]);
 
   // ── Sub-chart: RSI ──
   useEffect(() => {
@@ -547,6 +585,20 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
             <span>Vol <b>{(last.volume / 1e6).toFixed(1)}M</b></span>
           </div>
         )}
+        <div className="chart-period-hl">
+          <span className="period-label">{periodStats.rangeLabel}</span>
+          <span className="period-high">H <b>{currency}{periodStats.high.toFixed(2)}</b>
+            <small>{new Date(periodStats.highDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}</small>
+          </span>
+          <span className="period-low">L <b>{currency}{periodStats.low.toFixed(2)}</b>
+            <small>{new Date(periodStats.lowDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}</small>
+          </span>
+          <span className="period-range-bar">
+            <span className="range-track">
+              <span className="range-fill" style={{ left: `${Math.max(0, Math.min(100, ((last.close - periodStats.low) / Math.max(0.01, periodStats.high - periodStats.low)) * 100))}%` }} />
+            </span>
+          </span>
+        </div>
       </div>
 
       {/* Toolbar */}

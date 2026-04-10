@@ -11,11 +11,12 @@ import { PaperTradingPanel } from './components/PaperTradingPanel';
 import { TopPicksPanel } from './components/TopPicksPanel';
 import { IndicatorScreener } from './components/IndicatorScreener';
 import { InsightsPanel } from './components/InsightsPanel';
+import { ChatPanel } from './components/ChatPanel';
 import { useStockData } from './hooks/useStockData';
 import { computeSAStyleData } from './services/quantScoring';
 import './App.css';
 
-type SidebarTab = 'insights' | 'technical' | 'fundamental' | 'quant' | 'risk' | 'trade' | 'picks' | 'vwap' | 'guide';
+type SidebarTab = 'insights' | 'technical' | 'fundamental' | 'quant' | 'risk' | 'trade' | 'picks' | 'vwap' | 'guide' | 'chat';
 
 // Read API keys from environment (set in .env, never committed to git)
 const AV_KEY = import.meta.env.VITE_AV_KEY || '';
@@ -208,6 +209,10 @@ export default function App() {
               onClick={() => setActiveTab('guide')}>
               📖 Guide
             </button>
+            <button className={`sidebar-tab ${activeTab === 'chat' ? 'active' : ''}`}
+              onClick={() => setActiveTab('chat')}>
+              💬 Chat
+            </button>
           </div>
 
           {activeTab === 'insights' && (
@@ -293,6 +298,19 @@ export default function App() {
           )}
 
           {activeTab === 'guide' && <GuidePanel market={market} />}
+
+          {activeTab === 'chat' && (
+            <ChatPanel
+              market={market}
+              currency={mktConfig.currency}
+              symbol={stockData?.symbol || symbol}
+              signal={signal}
+              stockData={stockData}
+              liveQuote={liveQuote}
+              fundamentals={fundamentals}
+              onSelectSymbol={handleWatchlistSelect}
+            />
+          )}
         </div>
       </main>
 
@@ -351,6 +369,10 @@ export default function App() {
         <button className={`mobile-nav-btn ${activeTab === 'vwap' ? 'active' : ''}`} onClick={() => setActiveTab('vwap')}>
           <span className="nav-icon">📡</span>
           <span>Scan</span>
+        </button>
+        <button className={`mobile-nav-btn ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')}>
+          <span className="nav-icon">💬</span>
+          <span>Chat</span>
         </button>
       </nav>
     </div>
