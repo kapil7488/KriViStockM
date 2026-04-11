@@ -279,11 +279,13 @@ function ppoRlScore(quotes: StockQuote[]): {
     return denseForward(h2, actorW3, actorB3, 'softmax');
   }
 
-  function criticForward(state: number[]): number {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  function _criticForward(state: number[]): number {
     const h1 = denseForward(state, criticW1, criticB1, 'relu');
     const h2 = denseForward(h1, criticW2, criticB2, 'relu');
     return denseForward(h2, criticW3, criticB3, 'linear')[0];
   }
+  void _criticForward; // retained for future PPO value estimation
 
   // Simulate a trading episode on recent data
   const EPISODE_LEN = Math.min(100, features.length - 10);
