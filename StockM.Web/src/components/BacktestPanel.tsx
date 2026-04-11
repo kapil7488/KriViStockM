@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
-import { Market, StockQuote } from '../types';
+import { Market, StockQuote, ChartInterval } from '../types';
 import { SymbolAutocomplete } from './SymbolAutocomplete';
-import { fetchYahooHistorical } from '../services/stockApi';
+import { fetchYahooHistorical, fetchYahooIntraday } from '../services/stockApi';
 import {
   STRATEGIES, StrategyId, HoldingPeriod,
   BacktestConfig, BacktestResult, runBacktest, precomputeIndicators,
@@ -24,14 +24,20 @@ const DURATIONS: { id: BacktestDuration; label: string; days: number }[] = [
   { id: 'ALL', label: 'All', days: Infinity },
 ];
 
-function sliceByDuration(quotes: StockQuote[], dur: BacktestDuration): StockQuote[] {
-  if (dur === 'ALL') return quotes;
+type CandleTimeframe = '1D' | '1H' | '15m' | '10m';
+const TIMEFRAMES: { id: CandleTimeframe; label: string; interval: ChartInterval; rangeDays: number }[] = [
+  { id: '1D', label: '1 Day', interval: 'D', rangeDays: 0 },
+  { id: '1H', label: '1 Hour', interval: '1H', rangeDays: 90 },
+  { id: '15m', label: '15 Min', interval: '15m', rangeDays: 30 },
+  { id: '10m', label: '10 Min', interval: '5m', rangeDays: 30 },     // Yahoo has no 10m; use 5m
+];
+
+function getTradeAfterDate(dur: BacktestDuration): string | undefined {
+  if (dur === 'ALL') return undefined;
   const days = DURATIONS.find(d => d.id === dur)!.days;
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
-  const cutStr = cutoff.toISOString().split('T')[0];
-  const filtered = quotes.filter(q => q.timestamp >= cutStr);
-  return filtered.length >= 30 ? filtered : quotes.slice(-Math.max(30, days));
+  return cutoff.toISOString().split('T')[0];
 }
 
 const DEFAULT_CONFIG: Omit<BacktestConfig, 'strategy'> = {
@@ -59,20 +65,31 @@ export function BacktestPanel({ market, currency }: Props) {
   const [showTradeLog, setShowTradeLog] = useState(false);
   const [tradeLogPage, setTradeLogPage] = useState(0);
   const [duration, setDuration] = useState<BacktestDuration>('1Y');
-  const quotesCache = useRef<{ sym: string; quotes: StockQuote[] } | null>(null);
+  const [timeframe, setTimeframe] = useState<CandleTimeframe>('1D');
+  const quotesCache = useRef<{ sym: string; tf: string; quotes: StockQuote[] } | null>(null);
 
   const cur = currency === 'INR' ? '₹' : '$';
   const TRADES_PER_PAGE = 20;
 
   const fetchData = useCallback(async (sym: string): Promise<StockQuote[]> => {
-    if (quotesCache.current && quotesCache.current.sym === sym) return quotesCache.current.quotes;
-    // Fetch max available data (all daily history)
-    const bar = await fetchYahooHistorical(sym, market);
-    const quotes = bar.quotes;
-    if (!quotes || quotes.length < 250) throw new Error(`Need at least 250 bars. Got ${quotes?.length || 0} for ${sym}`);
-    quotesCache.current = { sym, quotes };
+    if (quotesCache.current && quotesCache.current.sym === sym && quotesCache.current.tf === timeframe)
+      return quotesCache.current.quotes;
+
+    let quotes: StockQuote[];
+    const tf = TIMEFRAMES.find(t => t.id === timeframe)!;
+
+    if (timeframe === '1D') {
+      const bar = await fetchYahooHistorical(sym, market);
+      quotes = bar.quotes;
+      if (!quotes || quotes.length < 60) throw new Error(`Need at least 60 bars. Got ${quotes?.length || 0} for ${sym}`);
+    } else {
+      quotes = await fetchYahooIntraday(sym, tf.interval, tf.rangeDays, market);
+      if (!quotes || quotes.length < 60) throw new Error(`Need at least 60 intraday bars. Got ${quotes?.length || 0} for ${sym}`);
+    }
+
+    quotesCache.current = { sym, tf: timeframe, quotes };
     return quotes;
-  }, [market]);
+  }, [market, timeframe]);
 
   const handleRun = useCallback(async () => {
     const sym = symbol.trim().toUpperCase();
@@ -81,8 +98,7 @@ export function BacktestPanel({ market, currency }: Props) {
     setError('');
     setResult(null);
     try {
-      const allQuotes = await fetchData(sym);
-      const quotes = sliceByDuration(allQuotes, duration);
+      const quotes = await fetchData(sym);
       const config: BacktestConfig = {
         strategy: selectedStrategy,
         holdingPeriod,
@@ -91,6 +107,7 @@ export function BacktestPanel({ market, currency }: Props) {
         stopLossPct: stopLoss,
         takeProfitPct: takeProfit,
         commissionPct: commission,
+        tradeAfterDate: getTradeAfterDate(duration),
       };
       const res = runBacktest(sym, quotes, config);
       setResult(res);
@@ -110,9 +127,9 @@ export function BacktestPanel({ market, currency }: Props) {
     setError('');
     setCompareResults([]);
     try {
-      const allQuotes = await fetchData(sym);
-      const quotes = sliceByDuration(allQuotes, duration);
+      const quotes = await fetchData(sym);
       const cachedInd = precomputeIndicators(quotes); // compute once, reuse for all 14 strategies
+      const tradeAfterDate = getTradeAfterDate(duration);
       const results: BacktestResult[] = [];
       for (const strat of STRATEGIES) {
         const config: BacktestConfig = {
@@ -123,6 +140,7 @@ export function BacktestPanel({ market, currency }: Props) {
           stopLossPct: stopLoss,
           takeProfitPct: takeProfit,
           commissionPct: commission,
+          tradeAfterDate,
         };
         results.push(runBacktest(sym, quotes, config, cachedInd));
       }
@@ -196,6 +214,16 @@ export function BacktestPanel({ market, currency }: Props) {
             {DURATIONS.map(d => (
               <button key={d.id} className={`bt-toggle bt-dur ${duration === d.id ? 'active' : ''}`}
                 onClick={() => setDuration(d.id)}>{d.label}</button>
+            ))}
+          </div>
+        </div>
+
+        <div className="bt-input-row">
+          <label className="bt-label">Candle</label>
+          <div className="bt-toggle-group bt-duration-group">
+            {TIMEFRAMES.map(t => (
+              <button key={t.id} className={`bt-toggle bt-dur ${timeframe === t.id ? 'active' : ''}`}
+                onClick={() => { setTimeframe(t.id); quotesCache.current = null; }}>{t.label}</button>
             ))}
           </div>
         </div>

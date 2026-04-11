@@ -48,6 +48,7 @@ export interface BacktestConfig {
   stopLossPct: number;         // hard SL %
   takeProfitPct: number;       // hard TP %
   commissionPct: number;       // round-trip commission %
+  tradeAfterDate?: string;     // only open new trades on or after this date (YYYY-MM-DD)
 }
 
 // ── Backtest results ───────────────────────────────────────────
@@ -135,8 +136,15 @@ function precompute(quotes: StockQuote[]): PrecomputedIndicators {
   };
 }
 
-// Min bars needed before any strategy can fire
-const MIN_WARMUP = 201;
+// Min bars needed before any strategy can fire (depends on slowest indicator used)
+
+/** Smaller warmup for strategies that don't use SMA200 */
+function getWarmup(strategy: StrategyId): number {
+  // SMA Cross uses SMA200 — needs 201 bars
+  if (strategy === 'sma-cross' || strategy === 'combo-trend' || strategy === 'ml-ensemble') return 201;
+  // Everything else works with 50-bar indicators max
+  return 52;
+}
 
 function signalVwap(i: number, quotes: StockQuote[], ind: PrecomputedIndicators): BarSignal {
   if (i < 1 || ind.vwapArr[i] <= 0) return 'none';
@@ -313,6 +321,7 @@ export function runBacktest(symbol: string, quotes: StockQuote[], config: Backte
   const stratDef = STRATEGIES.find(s => s.id === config.strategy)!;
   const signalFn = getSignalFn(config.strategy);
   const ind = cachedInd ?? precompute(quotes);
+  const warmup = getWarmup(config.strategy);
 
   let capital = config.initialCapital;
   let peakCapital = capital;
@@ -332,9 +341,11 @@ export function runBacktest(symbol: string, quotes: StockQuote[], config: Backte
   let stopPrice = 0;
   let targetPrice = 0;
 
-  for (let i = MIN_WARMUP; i < quotes.length; i++) {
+  for (let i = warmup; i < quotes.length; i++) {
     const bar = quotes[i];
     const close = bar.close;
+    // If tradeAfterDate is set, only open NEW positions on or after that date
+    const canOpenNew = !config.tradeAfterDate || bar.timestamp >= config.tradeAfterDate;
 
     if (inPosition) {
       const holdingDays = i - entryIdx;
@@ -389,7 +400,7 @@ export function runBacktest(symbol: string, quotes: StockQuote[], config: Backte
     }
 
     // Entry logic (only if not in position)
-    if (!inPosition && i < quotes.length - 1) {
+    if (!inPosition && i < quotes.length - 1 && canOpenNew) {
       const sig = signalFn(i, quotes, ind);
       if (sig === 'buy' || sig === 'sell') {
         const riskAmount = capital * (config.riskPerTradePct / 100);
@@ -487,8 +498,8 @@ export function runBacktest(symbol: string, quotes: StockQuote[], config: Backte
     strategy: stratDef,
     holdingPeriod: config.holdingPeriod,
     symbol,
-    dataRange: `${quotes[MIN_WARMUP]?.timestamp?.split('T')[0] || ''} → ${quotes[quotes.length - 1]?.timestamp?.split('T')[0] || ''}`,
-    totalBars: quotes.length - MIN_WARMUP,
+    dataRange: `${config.tradeAfterDate || quotes[warmup]?.timestamp?.split('T')[0] || ''} → ${quotes[quotes.length - 1]?.timestamp?.split('T')[0] || ''}`,
+    totalBars: quotes.length - warmup,
     initialCapital: config.initialCapital,
     finalCapital: r2(capital),
     netProfit: r2(netProfit),
