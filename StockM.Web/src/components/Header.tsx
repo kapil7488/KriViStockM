@@ -1,4 +1,5 @@
 import { Market, MARKETS, LiveQuote, SignalType } from '../types';
+import { SymbolAutocomplete } from './SymbolAutocomplete';
 
 interface HeaderProps {
   symbol: string;
@@ -43,13 +44,12 @@ export function Header({
           ))}
         </div>
 
-        <input
-          type="text"
-          className="symbol-input"
+        <SymbolAutocomplete
           value={symbol}
-          onChange={e => onSymbolChange(e.target.value.toUpperCase())}
-          onKeyDown={e => e.key === 'Enter' && onAnalyze()}
+          onChange={onSymbolChange}
+          onSelect={(s) => { onSymbolChange(s); onAnalyze(); }}
           placeholder={`Symbol (${mktConfig.id})...`}
+          className="symbol-input"
         />
         <button className="btn-primary" onClick={onAnalyze} disabled={loading}>
           {loading ? '⏳ Analyzing...' : '⚡ Analyze'}

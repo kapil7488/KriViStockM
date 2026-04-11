@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { Market, StockQuote } from '../types';
+import { SymbolAutocomplete } from './SymbolAutocomplete';
 import { fetchYahooHistorical } from '../services/stockApi';
 import {
   STRATEGIES, StrategyId, HoldingPeriod,
@@ -122,12 +123,12 @@ export function BacktestPanel({ market, currency }: Props) {
 
         <div className="bt-input-row">
           <label className="bt-label">Symbol</label>
-          <input
-            className="bt-input"
+          <SymbolAutocomplete
             value={symbol}
-            onChange={e => setSymbol(e.target.value.toUpperCase())}
+            onChange={setSymbol}
+            onSelect={handleRun}
             placeholder={market === 'US' ? 'AAPL' : market === 'CRYPTO' ? 'BTC-USD' : 'RELIANCE.NS'}
-            onKeyDown={e => e.key === 'Enter' && handleRun()}
+            className="bt-input"
           />
         </div>
 

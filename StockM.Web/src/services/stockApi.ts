@@ -38,6 +38,90 @@ const INDEX_SYMBOL_MAP: Record<string, string> = {
   'RUSSELL': '^RUT',
 };
 
+// Maps common abbreviations / short names to their actual Yahoo Finance tickers.
+// Users often type "ICICI" instead of "ICICIBANK", "SBI" instead of "SBIN", etc.
+const TICKER_ALIAS_MAP: Record<string, string> = {
+  // Indian stocks — common short names → Yahoo tickers (without suffix; suffix added later)
+  'ICICI': 'ICICIBANK',
+  'SBI': 'SBIN',
+  'HDFC': 'HDFCBANK',
+  'AXIS': 'AXISBANK',
+  'KOTAK': 'KOTAKBANK',
+  'BOB': 'BANKBARODA',
+  'PNB': 'PNB',
+  'INFY': 'INFY',
+  'TCS': 'TCS',
+  'WIPRO': 'WIPRO',
+  'LT': 'LT',
+  'HUL': 'HINDUNILVR',
+  'ITC': 'ITC',
+  'TITAN': 'TITAN',
+  'MARUTI': 'MARUTI',
+  'BAJAJ': 'BAJFINANCE',
+  'BAJFINSERV': 'BAJAJFINSV',
+  'ADANI': 'ADANIENT',
+  'TATA MOTORS': 'TATAMOTORS',
+  'TATAMOTORS': 'TATAMOTORS',
+  'TATA STEEL': 'TATASTEEL',
+  'TATASTEEL': 'TATASTEEL',
+  'TATAPOWER': 'TATAPOWER',
+  'TATA POWER': 'TATAPOWER',
+  'SUNPHARMA': 'SUNPHARMA',
+  'SUN PHARMA': 'SUNPHARMA',
+  'BHARTIARTL': 'BHARTIARTL',
+  'AIRTEL': 'BHARTIARTL',
+  'JIOFINANCE': 'JIOFIN',
+  'JIO': 'JIOFIN',
+  'POWERGRID': 'POWERGRID',
+  'NTPC': 'NTPC',
+  'ONGC': 'ONGC',
+  'COALINDIA': 'COALINDIA',
+  'COAL INDIA': 'COALINDIA',
+  'HINDALCO': 'HINDALCO',
+  'HCLTECH': 'HCLTECH',
+  'HCL': 'HCLTECH',
+  'ULTRACEMCO': 'ULTRACEMCO',
+  'ULTRATECH': 'ULTRACEMCO',
+  'TECHM': 'TECHM',
+  'TECH MAHINDRA': 'TECHM',
+  'M&M': 'M&M',
+  'MAHINDRA': 'M&M',
+  'DRREDDY': 'DRREDDY',
+  'CIPLA': 'CIPLA',
+  'APOLLOHOSP': 'APOLLOHOSP',
+  'APOLLO': 'APOLLOHOSP',
+  'DIVISLAB': 'DIVISLAB',
+  'DIVIS': 'DIVISLAB',
+  'EICHERMOT': 'EICHERMOT',
+  'EICHER': 'EICHERMOT',
+  'HEROMOTOCO': 'HEROMOTOCO',
+  'HERO': 'HEROMOTOCO',
+  'ASIANPAINT': 'ASIANPAINT',
+  'ASIAN PAINTS': 'ASIANPAINT',
+  'NESTLEIND': 'NESTLEIND',
+  'NESTLE': 'NESTLEIND',
+  'BRITANNIA': 'BRITANNIA',
+  'INDUSINDBK': 'INDUSINDBK',
+  'INDUSIND': 'INDUSINDBK',
+  'GRASIM': 'GRASIM',
+  'WIPRO': 'WIPRO',
+  'SBILIFE': 'SBILIFE',
+  'HDFCLIFE': 'HDFCLIFE',
+  'BAJAJHLDNG': 'BAJAJHLDNG',
+  // US stocks — common aliases
+  'GOOGLE': 'GOOGL',
+  'ALPHABET': 'GOOGL',
+  'FB': 'META',
+  'FACEBOOK': 'META',
+  'AMAZON': 'AMZN',
+  'APPLE': 'AAPL',
+  'MICROSOFT': 'MSFT',
+  'TESLA': 'TSLA',
+  'NETFLIX': 'NFLX',
+  'NVIDIA': 'NVDA',
+  'BERKSHIRE': 'BRK-B',
+};
+
 /** Resolve a user-typed symbol to the correct Yahoo Finance ticker. */
 function resolveYahooTicker(symbol: string, market?: Market): string {
   const upper = symbol.toUpperCase().trim();
@@ -48,10 +132,13 @@ function resolveYahooTicker(symbol: string, market?: Market): string {
   if (symbol.includes('.') || symbol.startsWith('^')) return symbol;
   // Crypto: already has -USD or append it
   if (market === 'CRYPTO') return symbol.includes('-') ? symbol : `${symbol}-USD`;
+  // Check alias map for common abbreviations
+  const alias = TICKER_ALIAS_MAP[upper];
+  const resolved = alias || symbol;
   // Append market suffix
-  if (market === 'NSE') return `${symbol}.NS`;
-  if (market === 'BSE') return `${symbol}.BO`;
-  return symbol;
+  if (market === 'NSE') return `${resolved}.NS`;
+  if (market === 'BSE') return `${resolved}.BO`;
+  return resolved;
 }
 
 // ===================== YAHOO CRUMB/SESSION =====================
@@ -906,6 +993,42 @@ export function buildFinnhubFundamentals(
     description: `${quote.companyName} — Real-time data powered by Finnhub. Sector: ${quote.sector || 'N/A'}.`,
     nextEarnings: 'N/A',
   };
+}
+
+// ===================== SYMBOL SEARCH / AUTOCOMPLETE =====================
+
+export interface SymbolSuggestion {
+  symbol: string;
+  shortname: string;
+  longname: string;
+  exchange: string;
+  quoteType: string;
+}
+
+/**
+ * Search Yahoo Finance for symbol suggestions (autocomplete).
+ * Filters to equities/ETFs/indices/crypto only (no mutual funds).
+ */
+export async function searchSymbols(query: string): Promise<SymbolSuggestion[]> {
+  if (!query || query.length < 1) return [];
+  const url = `${YAHOO2_URL}/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=8&newsCount=0&enableFuzzyQuery=true&quotesQueryId=tss_match_phrase_query`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const json = await res.json();
+    const quotes = json.quotes || [];
+    return quotes
+      .filter((q: any) => ['EQUITY', 'ETF', 'INDEX', 'CRYPTOCURRENCY'].includes(q.quoteType))
+      .map((q: any) => ({
+        symbol: q.symbol,
+        shortname: q.shortname || q.symbol,
+        longname: q.longname || q.shortname || q.symbol,
+        exchange: q.exchDisp || q.exchange || '',
+        quoteType: q.typeDisp || q.quoteType || '',
+      }));
+  } catch {
+    return [];
+  }
 }
 
 // ===================== NEWS & INSIGHTS (YAHOO SEARCH API) =====================
