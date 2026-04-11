@@ -13,6 +13,27 @@ interface Props {
   onSelectSymbol: (s: string) => void;
 }
 
+type BacktestDuration = '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'ALL';
+const DURATIONS: { id: BacktestDuration; label: string; days: number }[] = [
+  { id: '1W', label: '1W', days: 7 },
+  { id: '1M', label: '1M', days: 30 },
+  { id: '3M', label: '3M', days: 90 },
+  { id: '6M', label: '6M', days: 180 },
+  { id: '1Y', label: '1Y', days: 365 },
+  { id: '5Y', label: '5Y', days: 1825 },
+  { id: 'ALL', label: 'All', days: Infinity },
+];
+
+function sliceByDuration(quotes: StockQuote[], dur: BacktestDuration): StockQuote[] {
+  if (dur === 'ALL') return quotes;
+  const days = DURATIONS.find(d => d.id === dur)!.days;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutStr = cutoff.toISOString().split('T')[0];
+  const filtered = quotes.filter(q => q.timestamp >= cutStr);
+  return filtered.length >= 30 ? filtered : quotes.slice(-Math.max(30, days));
+}
+
 const DEFAULT_CONFIG: Omit<BacktestConfig, 'strategy'> = {
   holdingPeriod: 'swing',
   initialCapital: 10000,
@@ -37,6 +58,7 @@ export function BacktestPanel({ market, currency }: Props) {
   const [error, setError] = useState('');
   const [showTradeLog, setShowTradeLog] = useState(false);
   const [tradeLogPage, setTradeLogPage] = useState(0);
+  const [duration, setDuration] = useState<BacktestDuration>('1Y');
   const quotesCache = useRef<{ sym: string; quotes: StockQuote[] } | null>(null);
 
   const cur = currency === 'INR' ? '₹' : '$';
@@ -59,7 +81,8 @@ export function BacktestPanel({ market, currency }: Props) {
     setError('');
     setResult(null);
     try {
-      const quotes = await fetchData(sym);
+      const allQuotes = await fetchData(sym);
+      const quotes = sliceByDuration(allQuotes, duration);
       const config: BacktestConfig = {
         strategy: selectedStrategy,
         holdingPeriod,
@@ -78,7 +101,7 @@ export function BacktestPanel({ market, currency }: Props) {
     } finally {
       setRunning(false);
     }
-  }, [symbol, selectedStrategy, holdingPeriod, initialCapital, riskPerTrade, stopLoss, takeProfit, commission, fetchData]);
+  }, [symbol, selectedStrategy, holdingPeriod, duration, initialCapital, riskPerTrade, stopLoss, takeProfit, commission, fetchData]);
 
   const handleCompareAll = useCallback(async () => {
     const sym = symbol.trim().toUpperCase();
@@ -87,7 +110,8 @@ export function BacktestPanel({ market, currency }: Props) {
     setError('');
     setCompareResults([]);
     try {
-      const quotes = await fetchData(sym);
+      const allQuotes = await fetchData(sym);
+      const quotes = sliceByDuration(allQuotes, duration);
       const cachedInd = precomputeIndicators(quotes); // compute once, reuse for all 14 strategies
       const results: BacktestResult[] = [];
       for (const strat of STRATEGIES) {
@@ -110,7 +134,7 @@ export function BacktestPanel({ market, currency }: Props) {
     } finally {
       setRunning(false);
     }
-  }, [symbol, holdingPeriod, initialCapital, riskPerTrade, stopLoss, takeProfit, commission, fetchData]);
+  }, [symbol, holdingPeriod, duration, initialCapital, riskPerTrade, stopLoss, takeProfit, commission, fetchData]);
 
   const stratDef = STRATEGIES.find(s => s.id === selectedStrategy)!;
 
@@ -162,6 +186,16 @@ export function BacktestPanel({ market, currency }: Props) {
               onClick={() => setHoldingPeriod('swing')}>🏄 Swing (≤20d)</button>
             <button className={`bt-toggle ${holdingPeriod === 'longterm' ? 'active' : ''}`}
               onClick={() => setHoldingPeriod('longterm')}>📈 Long Term</button>
+          </div>
+        </div>
+
+        <div className="bt-input-row">
+          <label className="bt-label">Test Period</label>
+          <div className="bt-toggle-group bt-duration-group">
+            {DURATIONS.map(d => (
+              <button key={d.id} className={`bt-toggle bt-dur ${duration === d.id ? 'active' : ''}`}
+                onClick={() => setDuration(d.id)}>{d.label}</button>
+            ))}
           </div>
         </div>
 

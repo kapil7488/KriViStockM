@@ -358,9 +358,9 @@ export default function App() {
           <span className="nav-icon">🔬</span>
           <span>Quant</span>
         </button>
-        <button className={`mobile-nav-btn ${activeTab === 'trade' ? 'active' : ''}`} onClick={() => setActiveTab('trade')}>
-          <span className="nav-icon">💰</span>
-          <span>Trade</span>
+        <button className={`mobile-nav-btn ${activeTab === 'backtest' ? 'active' : ''}`} onClick={() => setActiveTab('backtest')}>
+          <span className="nav-icon">🧪</span>
+          <span>Backtest</span>
         </button>
         <button className={`mobile-nav-btn ${activeTab === 'picks' ? 'active' : ''}`} onClick={() => setActiveTab('picks')}>
           <span className="nav-icon">🔥</span>
