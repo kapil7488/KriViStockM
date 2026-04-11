@@ -163,22 +163,29 @@ function parseIntent(input: string, _currentSymbol: string): Intent {
   if (/\b(golden cross)\b/.test(lower)) return { type: 'explain_indicator', indicator: 'golden-cross' };
   if (/\b(death cross)\b/.test(lower)) return { type: 'explain_indicator', indicator: 'death-cross' };
 
-  // Trading topics
-  for (const key of Object.keys(TRADING_KB)) {
-    if (lower.includes(key.replace('-', ' ')) || lower.includes(key)) {
-      return { type: 'explain_trading', topic: key };
-    }
-  }
-  if (lower.includes('stop loss') || lower.includes('stoploss')) return { type: 'explain_trading', topic: 'stoploss' };
-  if (lower.includes('risk reward') || lower.includes('risk-reward') || lower.includes('r:r')) return { type: 'explain_trading', topic: 'risk-reward' };
+  // ── Best for intraday / swing / find top stocks — MUST come before TRADING_KB ──
+  const wantsStocks = /\b(find|scan|screen|top|best|recommend|pick|list|give|show|suggest)\b/.test(lower)
+    && /\b(\d+\s*)?(stock|pick|trade|option)/i.test(lower);
+  const wantsAction = /\b(best|top|recommend|which|find|scan|screen|show|give|list|suggest)\b/.test(lower);
 
-  // Best for intraday / swing
-  if ((lower.includes('best') || lower.includes('top') || lower.includes('recommend') || lower.includes('which')) && lower.includes('intraday')) {
+  if ((wantsStocks || wantsAction) && lower.includes('intraday')) {
     return { type: 'best_intraday' };
   }
-  if ((lower.includes('best') || lower.includes('top') || lower.includes('recommend') || lower.includes('which')) && (lower.includes('swing') || lower.includes('short term'))) {
+  if ((wantsStocks || wantsAction) && (lower.includes('swing') || lower.includes('short term'))) {
     return { type: 'best_swing' };
   }
+
+  // Trading topics (only for pure explanation questions, not action requests)
+  const isExplainOnly = /\b(what|explain|mean|how does|tell me about|describe|definition)\b/.test(lower);
+  for (const key of Object.keys(TRADING_KB)) {
+    if (lower.includes(key.replace('-', ' ')) || lower.includes(key)) {
+      if (isExplainOnly || (!wantsStocks && !wantsAction)) {
+        return { type: 'explain_trading', topic: key };
+      }
+    }
+  }
+  if ((lower.includes('stop loss') || lower.includes('stoploss')) && isExplainOnly) return { type: 'explain_trading', topic: 'stoploss' };
+  if ((lower.includes('risk reward') || lower.includes('risk-reward') || lower.includes('r:r')) && isExplainOnly) return { type: 'explain_trading', topic: 'risk-reward' };
 
   // ── Backtest intent detection ─────────────────────────────────
   if (/\b(backtest|back test|back-test|test strategy|test .+ strategy|efficiency|win rate)\b/.test(lower)) {
@@ -662,42 +669,93 @@ export function ChatPanel({ market, currency, symbol, signal, stockData: _stockD
         case 'best_intraday':
         case 'best_swing': {
           const isIntraday = intent.type === 'best_intraday';
-          addMessage('assistant', `🔄 Scanning top ${assetWord}s on **${mktLabel}** for **${isIntraday ? 'intraday' : 'swing'}** trading... This may take a moment.`);
+          const scanSize = 20;
+          addMessage('assistant', `🔄 Scanning **${scanSize}+ ${assetWord}s** on **${mktLabel}** for **${isIntraday ? 'intraday' : 'swing'}** setups...\n\nChecking MACD crossover, RSI, EMA, VWAP, Bollinger, ATR...`);
 
-          const stocks = getScanUniverse(market, 'default').slice(0, 10);
-          const results: { sym: string; signal: StockSignal; snap: IndicatorSnapshot }[] = [];
+          const stocks = getScanUniverse(market, 'default').slice(0, scanSize);
+          const allResults: { sym: string; signal: StockSignal; snap: IndicatorSnapshot; swingScore: number }[] = [];
 
           for (const sym of stocks) {
             const r = await quickAnalyze(sym, market);
-            if (r) results.push({ sym, ...r });
+            if (!r) continue;
+
+            // ── Compute swing / intraday criteria score ──
+            let score = 0;
+            const { snap, signal: sig } = r;
+
+            if (isIntraday) {
+              // Intraday: price near VWAP, RSI 40-60 (room to move), high ATR%, stoch not extreme
+              if (sig.entryPrice > snap.vwap) score += 2;          // above VWAP
+              if (snap.rsi > 40 && snap.rsi < 65) score += 2;     // RSI mid-range
+              if (snap.atr / sig.entryPrice > 0.015) score += 2;  // good volatility
+              if (snap.stochK < 80 && snap.stochK > 20) score += 1; // not extreme
+              if (snap.macdLine > snap.macdSignal) score += 2;    // MACD bullish
+            } else {
+              // Swing: MACD bullish crossover + RSI > 50 + price above EMA26
+              if (snap.macdLine > snap.macdSignal) score += 3;    // MACD bullish crossover
+              if (snap.rsi > 50 && snap.rsi < 75) score += 3;     // RSI > 50 (momentum)
+              if (snap.ema12 > snap.ema26) score += 2;            // price region above EMA26
+              if (snap.maCrossoverBullish) score += 2;            // SMA50 > SMA200
+              if (sig.entryPrice > snap.vwap) score += 1;         // above VWAP confirmation
+              if (sig.entryPrice > snap.bollingerMiddle) score += 1; // above BB mid
+              if (snap.stochK > 20 && snap.stochK < 80) score += 1; // not extreme stoch
+            }
+
+            // Bonus for model agreement
+            const bullish = sig.models.filter(m => m.signal === 'StrongBuy' || m.signal === 'Buy').length;
+            score += bullish;
+
+            allResults.push({ sym, ...r, swingScore: score });
           }
 
-          // Sort by model score
-          results.sort((a, b) => b.signal.modelScore - a.signal.modelScore);
-          const top5 = results.slice(0, 5);
+          // Sort by criteria score, then by model score as tiebreaker
+          allResults.sort((a, b) => b.swingScore - a.swingScore || b.signal.modelScore - a.signal.modelScore);
+          const top = allResults.slice(0, 10);
           const cs = currency === 'INR' ? '₹' : '$';
 
-          response = `## 🏆 Top ${Math.min(5, top5.length)} for ${isIntraday ? 'Intraday' : 'Swing'} Trading (${market})\n\n`;
+          response = `## 🏆 Top ${Math.min(10, top.length)} for ${isIntraday ? 'Intraday' : 'Swing'} Trading (${market})\n\n`;
 
-          top5.forEach((r, i) => {
+          if (!isIntraday) {
+            response += `**Criteria:** MACD bullish crossover ✓ RSI > 50 ✓ Price above EMA 26 ✓\n\n`;
+          } else {
+            response += `**Criteria:** Above VWAP ✓ RSI 40–65 ✓ MACD bullish ✓ High ATR ✓\n\n`;
+          }
+
+          top.forEach((r, i) => {
             const emoji = r.signal.signal === 'StrongBuy' ? '🟢🟢' : r.signal.signal === 'Buy' ? '🟢' : r.signal.signal === 'Hold' ? '🟡' : '🔴';
             const bullish = r.signal.models.filter(m => m.signal === 'StrongBuy' || m.signal === 'Buy').length;
             const atrPct = ((r.snap.atr / r.signal.entryPrice) * 100).toFixed(1);
-            response += `**${i + 1}. ${emoji} ${r.sym}** — ${r.signal.signal} (${(r.signal.modelScore * 100).toFixed(0)}%)\n`;
+
+            // Show which criteria are met
+            let criteria = '';
+            if (!isIntraday) {
+              criteria += r.snap.macdLine > r.snap.macdSignal ? '✅MACD ' : '❌MACD ';
+              criteria += r.snap.rsi > 50 ? `✅RSI(${r.snap.rsi.toFixed(0)}) ` : `❌RSI(${r.snap.rsi.toFixed(0)}) `;
+              criteria += r.snap.ema12 > r.snap.ema26 ? '✅EMA ' : '❌EMA ';
+              criteria += r.snap.maCrossoverBullish ? '✅SMA ' : '❌SMA ';
+            } else {
+              criteria += r.signal.entryPrice > r.snap.vwap ? '✅VWAP ' : '❌VWAP ';
+              criteria += (r.snap.rsi > 40 && r.snap.rsi < 65) ? `✅RSI(${r.snap.rsi.toFixed(0)}) ` : `⚠️RSI(${r.snap.rsi.toFixed(0)}) `;
+              criteria += r.snap.macdLine > r.snap.macdSignal ? '✅MACD ' : '❌MACD ';
+            }
+
+            response += `**${i + 1}. ${emoji} ${r.sym}** — ${r.signal.signal} (${(r.signal.modelScore * 100).toFixed(0)}%) · Score: ${r.swingScore}\n`;
+            response += `   ${criteria}\n`;
             response += `   Price: ${cs}${r.signal.entryPrice.toFixed(2)} | ${bullish}/${r.signal.models.length} algos bullish | ATR: ${atrPct}%\n`;
-            response += `   Target: ${cs}${r.signal.takeProfit.toFixed(2)} | SL: ${cs}${r.signal.stopLoss.toFixed(2)}\n\n`;
+            response += `   Entry: ${cs}${r.signal.entryPrice.toFixed(2)} | SL: ${cs}${r.signal.stopLoss.toFixed(2)} | Target: ${cs}${r.signal.takeProfit.toFixed(2)} (${((r.signal.takeProfit / r.signal.entryPrice - 1) * 100).toFixed(1)}% upside)\n\n`;
           });
 
-          if (top5.length > 0) {
-            const best = top5[0];
-            response += `\n### 🎯 Top Pick: **${best.sym}**\n`;
-            response += `${(best.signal.modelScore * 100).toFixed(0)}% score with ${best.signal.models.filter(m => m.signal === 'StrongBuy' || m.signal === 'Buy').length}/${best.signal.models.length} bullish models.`;
+          if (top.length > 0) {
+            const best = top[0];
+            response += `---\n### 🎯 Top Pick: **${best.sym}**\n`;
+            response += `Score: **${best.swingScore}** | ${(best.signal.modelScore * 100).toFixed(0)}% model confidence | ${best.signal.models.filter(m => m.signal === 'StrongBuy' || m.signal === 'Buy').length}/${best.signal.models.length} models bullish\n\n`;
             if (isIntraday) {
-              response += `\n\n**Intraday Strategy:** Enter near VWAP (${cs}${best.snap.vwap.toFixed(2)}), SL at ${cs}${best.signal.stopLoss.toFixed(2)}, target ${cs}${best.signal.takeProfit.toFixed(2)}. Watch RSI (${best.snap.rsi.toFixed(1)}) for momentum confirmation.`;
+              response += `**Intraday Plan:** Enter near VWAP (${cs}${best.snap.vwap.toFixed(2)}), SL: ${cs}${best.signal.stopLoss.toFixed(2)}, Target: ${cs}${best.signal.takeProfit.toFixed(2)}. RSI: ${best.snap.rsi.toFixed(1)}.`;
             } else {
-              response += `\n\n**Swing Strategy:** Enter at ${cs}${best.signal.entryPrice.toFixed(2)}, hold 3–10 days. SL: ${cs}${best.signal.stopLoss.toFixed(2)}, target: ${cs}${best.signal.takeProfit.toFixed(2)}.`;
+              response += `**Swing Plan:** MACD is ${best.snap.macdLine > best.snap.macdSignal ? 'bullish ✅' : 'bearish ❌'}, RSI at ${best.snap.rsi.toFixed(1)}${best.snap.rsi > 50 ? ' ✅' : ' ❌'}.\n`;
+              response += `Entry: ${cs}${best.signal.entryPrice.toFixed(2)}, hold 3–15 days. SL: ${cs}${best.signal.stopLoss.toFixed(2)} (below swing low or 2×ATR). Target: ${cs}${best.signal.takeProfit.toFixed(2)}.`;
             }
-            response += `\n\n*Click "${best.sym}" in the watchlist or type "analyze ${best.sym}" for full details.*`;
+            response += `\n\n*Type "analyze ${best.sym}" for full breakdown, or "backtest all ${best.sym}" to test strategies.*`;
           }
           break;
         }
