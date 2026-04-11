@@ -6,6 +6,12 @@
   "functions": {
     "api/**": { "memory": 256 }
   },
+  "crons": [
+    {
+      "path": "/api/sma-cross-alert",
+      "schedule": "0 11 * * 1-5"
+    }
+  ],
   "rewrites": [
     { "source": "/api/yahoo2/(.*)", "destination": "/api/yahoo2" },
     { "source": "/api/yahoo/(.*)",  "destination": "/api/yahoo" },
