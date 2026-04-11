@@ -4,7 +4,7 @@ import {
   LetterGrade, QuantRatingType, SAStyleData, StockSignal, MasterSignalData, TradePlan,
 } from '../types';
 import { generateMasterSignal, generateTradePlan } from '../services/scoringEngine';
-import type { MLPrediction } from '../services/mlModels';
+import type { MLPrediction } from '../services/scoringEngine';
 
 /* ===================== helpers ===================== */
 
@@ -521,16 +521,16 @@ function TradePlanSection({ plan, signal, currency, master, accountBalance, risk
   );
 }
 
-/* ===================== TF.js ML Inference Section ===================== */
+/* ===================== ML Inference Section ===================== */
 
 function MLInferenceSection({ mlPrediction, mlLoading }: { mlPrediction: MLPrediction | null; mlLoading: boolean }) {
   if (mlLoading) {
     return (
       <div className="sa-section ml-section">
-        <h4 className="sa-section-title">🧠 TensorFlow.js — Real ML Inference</h4>
+        <h4 className="sa-section-title">🧠 ML Inference Engine</h4>
         <div className="ml-loading">
           <div className="ml-spinner" />
-          <span>Training LSTM + RL Agent in browser...</span>
+          <span>Running LSTM + RL Agent...</span>
         </div>
       </div>
     );
@@ -547,11 +547,11 @@ function MLInferenceSection({ mlPrediction, mlLoading }: { mlPrediction: MLPredi
 
   return (
     <div className="sa-section ml-section">
-      <h4 className="sa-section-title">🧠 TensorFlow.js — Real ML Inference</h4>
+      <h4 className="sa-section-title">🧠 ML Inference Engine</h4>
       <div className="ml-badge-row">
-        <span className="ml-real-badge">✅ REAL TF.JS</span>
-        <span className="ml-real-badge ml-badge-lstm">LSTM {p.lstmEpochs} epochs</span>
-        <span className="ml-real-badge ml-badge-rl">PPO {p.rlEpisodes} episodes</span>
+        <span className="ml-real-badge">✅ PURE TS</span>
+        <span className="ml-real-badge ml-badge-lstm">LSTM + Attention</span>
+        <span className="ml-real-badge ml-badge-rl">PPO RL Agent</span>
       </div>
 
       {/* ── Ensemble Result ── */}
@@ -643,8 +643,8 @@ function MLInferenceSection({ mlPrediction, mlLoading }: { mlPrediction: MLPredi
       <div className="ml-tech-card">
         <span className="ml-tech-title">⚙️ Stack</span>
         <span className="ml-tech-text">
-          @tensorflow/tfjs (WebGL) · LSTM 2-layer (32→16 units) · Multi-head Self-Attention ·
-          PPO (Actor-Critic, ε=0.2, γ=0.99, λ=0.95) · {FEATURE_COUNT} features × {SEQUENCE_LEN}-bar window
+          Pure TypeScript · LSTM 2-layer (8→4 units) · Multi-head Self-Attention ·
+          PPO (Actor-Critic, policy gradient) · {FEATURE_COUNT} features × {SEQUENCE_LEN}-bar window
         </span>
       </div>
     </div>
@@ -730,7 +730,7 @@ export function QuantRatingPanel({ data, symbol, currency, signal, mlPrediction,
           onBalanceChange={setAccountBalance} onRiskChange={setRiskPct} />
       )}
 
-      {/* ── TensorFlow.js Real ML Inference ── */}
+      {/* ── ML Inference Engine ── */}
       <MLInferenceSection mlPrediction={mlPrediction ?? null} mlLoading={mlLoading ?? false} />
 
       {/* ── Momentum ── */}

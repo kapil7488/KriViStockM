@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import {
   StockBar, StockSignal, RiskAssessment, RiskParameters, FundamentalData, LiveQuote,
   Market, DEFAULT_RISK_PARAMS, AllTimeData,
@@ -9,9 +9,8 @@ import {
   fetchFinnhubQuote, fetchFinnhubMetrics, buildFinnhubFundamentals,
   fetchYahooQuote, fetchYahooHistorical, fetchYahooFundamentals, fetchAllTimeData,
 } from '../services/stockApi';
-import { generateSignal } from '../services/scoringEngine';
+import { generateSignal, runPureMlPrediction, type MLPrediction } from '../services/scoringEngine';
 import { evaluateRisk } from '../services/riskManager';
-import { runFullMLPrediction, type MLPrediction } from '../services/mlModels';
 
 export type DataSource = 'simulated' | 'live-api' | 'live-patched';
 
@@ -52,7 +51,6 @@ export function useStockData(): UseStockDataReturn {
   const [mlLoading, setMlLoading] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<number>(Date.now());
   const riskParams = DEFAULT_RISK_PARAMS;
-  const mlRequestId = useRef(0); // cancel stale ML requests on rapid symbol changes
 
   const analyze = useCallback(async (symbol: string, market: Market, apiKey?: string, finnhubKey?: string) => {
     setLoading(true);
@@ -175,17 +173,13 @@ export function useStockData(): UseStockDataReturn {
       const riskAssessment = evaluateRisk(sig, riskParams);
       setRisk(riskAssessment);
 
-      // Run TF.js ML models in background — defer by 2s to let UI render first
-      const thisRequestId = ++mlRequestId.current;
-      setMlLoading(true);
-      setMlPrediction(null);
-      setTimeout(() => {
-        if (mlRequestId.current !== thisRequestId) return; // cancelled
-        runFullMLPrediction(data.quotes, symbol, sig.indicators)
-          .then(pred => { if (mlRequestId.current === thisRequestId) setMlPrediction(pred); })
-          .catch(err => console.warn('[StockM] ML prediction failed:', err))
-          .finally(() => { if (mlRequestId.current === thisRequestId) setMlLoading(false); });
-      }, 2000);
+      // Pure-TS ML prediction (synchronous, no TF.js, no blocking)
+      try {
+        setMlPrediction(runPureMlPrediction(data.quotes));
+      } catch (err) {
+        console.warn('[StockM] ML prediction failed:', err);
+      }
+      setMlLoading(false);
 
       // Fundamentals: Yahoo quoteSummary (real data) → Finnhub metrics → live quote → synthetic
       try {
