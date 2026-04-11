@@ -25,6 +25,11 @@ async function ensureTf() {
   return _tf;
 }
 
+/** Yield to the browser event loop so the UI stays responsive during heavy computation */
+function yieldToUI(): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+
 // ─────────────────────────────────────────────────────────────
 //  FEATURE ENGINEERING (shared across all models)
 // ─────────────────────────────────────────────────────────────
@@ -223,9 +228,13 @@ export async function runLSTMPrediction(
   }
 
   // Train (quick — few epochs with small batch for responsive UI)
-  const EPOCHS = needRetrain ? 3 : 1;
-  const xTensor = tf.tensor3d(trainX);
-  const yTensor = tf.tensor2d(trainY, [trainY.length, 1]);
+  const EPOCHS = needRetrain ? 2 : 1;
+  // Limit training data to last 300 sequences to avoid blocking
+  const maxTrain = 300;
+  const trimmedX = trainX.length > maxTrain ? trainX.slice(-maxTrain) : trainX;
+  const trimmedY = trainY.length > maxTrain ? trainY.slice(-maxTrain) : trainY;
+  const xTensor = tf.tensor3d(trimmedX);
+  const yTensor = tf.tensor2d(trimmedY, [trimmedY.length, 1]);
 
   try {
     await model.fit(xTensor, yTensor, {
@@ -449,8 +458,8 @@ export async function runRLAgent(
     critic = ppoCache!.critic;
   }
 
-  const EPISODES = needNew ? 2 : 1;
-  const EPISODE_LEN = Math.min(200, features.length - 10);
+  const EPISODES = 1; // single episode to avoid blocking the main thread
+  const EPISODE_LEN = Math.min(100, features.length - 10); // shorter episodes
   const CLIP_EPSILON = 0.2;
 
   let totalReward = 0;
@@ -538,6 +547,7 @@ export async function runRLAgent(
 
     // PPO update
     if (steps.length > 10) {
+      await yieldToUI(); // let browser paint between training steps
       const { returns, advantages } = computeAdvantages(steps);
 
       const statesBatch = tf.tensor2d(steps.map(s => s.state));
@@ -677,12 +687,12 @@ export async function runFullMLPrediction(
   // Ensure TF.js is loaded before any model code runs
   await ensureTf();
 
-  // Run LSTM and RL in parallel
-  const [lstmResult, attentionResult, rlResult] = await Promise.all([
-    runLSTMPrediction(quotes, symbol),
-    runAttentionAnalysis(quotes),
-    runRLAgent(quotes, symbol, snap),
-  ]);
+  // Run models sequentially with yields to keep UI responsive
+  const lstmResult = await runLSTMPrediction(quotes, symbol);
+  await yieldToUI();
+  const attentionResult = await runAttentionAnalysis(quotes);
+  await yieldToUI();
+  const rlResult = await runRLAgent(quotes, symbol, snap);
 
   // Weighted ensemble: LSTM 35%, Attention 15%, RL 30%, agree-boost 20%
   const lstmW = 0.35;

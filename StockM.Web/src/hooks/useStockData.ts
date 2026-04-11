@@ -175,14 +175,17 @@ export function useStockData(): UseStockDataReturn {
       const riskAssessment = evaluateRisk(sig, riskParams);
       setRisk(riskAssessment);
 
-      // Run TF.js ML models in background (non-blocking, cancellable)
+      // Run TF.js ML models in background — defer by 2s to let UI render first
       const thisRequestId = ++mlRequestId.current;
       setMlLoading(true);
       setMlPrediction(null);
-      runFullMLPrediction(data.quotes, symbol, sig.indicators)
-        .then(pred => { if (mlRequestId.current === thisRequestId) setMlPrediction(pred); })
-        .catch(err => console.warn('[StockM] ML prediction failed:', err))
-        .finally(() => { if (mlRequestId.current === thisRequestId) setMlLoading(false); });
+      setTimeout(() => {
+        if (mlRequestId.current !== thisRequestId) return; // cancelled
+        runFullMLPrediction(data.quotes, symbol, sig.indicators)
+          .then(pred => { if (mlRequestId.current === thisRequestId) setMlPrediction(pred); })
+          .catch(err => console.warn('[StockM] ML prediction failed:', err))
+          .finally(() => { if (mlRequestId.current === thisRequestId) setMlLoading(false); });
+      }, 2000);
 
       // Fundamentals: Yahoo quoteSummary (real data) → Finnhub metrics → live quote → synthetic
       try {
