@@ -50,6 +50,7 @@ export function Header({
           onSelect={(s) => { onSymbolChange(s); onAnalyze(); }}
           placeholder={`Symbol (${mktConfig.id})...`}
           className="symbol-input"
+          market={market}
         />
         <button className="btn-primary" onClick={onAnalyze} disabled={loading}>
           {loading ? '⏳ Analyzing...' : '⚡ Analyze'}

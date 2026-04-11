@@ -1007,24 +1007,58 @@ export interface SymbolSuggestion {
 /**
  * Search Yahoo Finance for symbol suggestions (autocomplete).
  * Filters to equities/ETFs/indices/crypto only (no mutual funds).
+ * When market is provided, results from matching exchanges are prioritized.
+ * Also uses TICKER_ALIAS_MAP to expand common abbreviations (ICICI → ICICIBANK).
  */
-export async function searchSymbols(query: string): Promise<SymbolSuggestion[]> {
+export async function searchSymbols(query: string, market?: Market): Promise<SymbolSuggestion[]> {
   if (!query || query.length < 1) return [];
-  const url = `${YAHOO2_URL}/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=8&newsCount=0&enableFuzzyQuery=true&quotesQueryId=tss_match_phrase_query`;
+
+  // Expand query using alias map (e.g. "ICICI" → also search "ICICIBANK")
+  const alias = TICKER_ALIAS_MAP[query.toUpperCase().trim()];
+  const queries = alias && alias.toUpperCase() !== query.toUpperCase().trim()
+    ? [query, alias] : [query];
+
   try {
-    const res = await fetch(url);
-    if (!res.ok) return [];
-    const json = await res.json();
-    const quotes = json.quotes || [];
-    return quotes
-      .filter((q: any) => ['EQUITY', 'ETF', 'INDEX', 'CRYPTOCURRENCY'].includes(q.quoteType))
-      .map((q: any) => ({
-        symbol: q.symbol,
-        shortname: q.shortname || q.symbol,
-        longname: q.longname || q.shortname || q.symbol,
-        exchange: q.exchDisp || q.exchange || '',
-        quoteType: q.typeDisp || q.quoteType || '',
-      }));
+    const allResults: SymbolSuggestion[] = [];
+    const seen = new Set<string>();
+
+    for (const q of queries) {
+      const url = `${YAHOO2_URL}/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0&enableFuzzyQuery=true&quotesQueryId=tss_match_phrase_query`;
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const json = await res.json();
+      const quotes = json.quotes || [];
+      for (const r of quotes) {
+        if (!['EQUITY', 'ETF', 'INDEX', 'CRYPTOCURRENCY'].includes(r.quoteType)) continue;
+        if (seen.has(r.symbol)) continue;
+        seen.add(r.symbol);
+        allResults.push({
+          symbol: r.symbol,
+          shortname: r.shortname || r.symbol,
+          longname: r.longname || r.shortname || r.symbol,
+          exchange: r.exchDisp || r.exchange || '',
+          quoteType: r.typeDisp || r.quoteType || '',
+        });
+      }
+    }
+
+    // Prioritize results matching the current market
+    if (market) {
+      const exchangeMatch = (exch: string, sym: string): boolean => {
+        const e = exch.toUpperCase();
+        if (market === 'NSE') return e.includes('NSE') || e.includes('NSI') || sym.endsWith('.NS');
+        if (market === 'BSE') return e.includes('BSE') || e.includes('BOMBAY') || e.includes('BOM') || sym.endsWith('.BO');
+        if (market === 'US') return ['NYSE', 'NASDAQ', 'NYQ', 'NMS', 'NGM', 'AMEX', 'ARCA'].some(x => e.includes(x));
+        if (market === 'CRYPTO') return e.includes('CRYPTO') || e.includes('CCC');
+        return false;
+      };
+      allResults.sort((a, b) => {
+        const aMatch = exchangeMatch(a.exchange, a.symbol) ? 0 : 1;
+        const bMatch = exchangeMatch(b.exchange, b.symbol) ? 0 : 1;
+        return aMatch - bMatch;
+      });
+    }
+    return allResults.slice(0, 8);
   } catch {
     return [];
   }

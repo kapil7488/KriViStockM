@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { searchSymbols, SymbolSuggestion } from '../services/stockApi';
+import type { Market } from '../types';
 
 interface Props {
   value: string;
@@ -7,9 +8,10 @@ interface Props {
   onSelect: (s: string) => void;
   placeholder?: string;
   className?: string;
+  market?: Market;
 }
 
-export function SymbolAutocomplete({ value, onChange, onSelect, placeholder, className }: Props) {
+export function SymbolAutocomplete({ value, onChange, onSelect, placeholder, className, market }: Props) {
   const [suggestions, setSuggestions] = useState<SymbolSuggestion[]>([]);
   const [open, setOpen] = useState(false);
   const [activeIdx, setActiveIdx] = useState(-1);
@@ -21,12 +23,12 @@ export function SymbolAutocomplete({ value, onChange, onSelect, placeholder, cla
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (q.length < 1) { setSuggestions([]); setOpen(false); return; }
     debounceRef.current = setTimeout(async () => {
-      const results = await searchSymbols(q);
+      const results = await searchSymbols(q, market);
       setSuggestions(results);
       setOpen(results.length > 0);
       setActiveIdx(-1);
     }, 250);
-  }, []);
+  }, [market]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = e.target.value.toUpperCase();

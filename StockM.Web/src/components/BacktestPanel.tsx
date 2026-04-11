@@ -153,6 +153,7 @@ export function BacktestPanel({ market, currency }: Props) {
             onSelect={handleRun}
             placeholder={market === 'US' ? 'AAPL' : market === 'CRYPTO' ? 'BTC-USD' : 'RELIANCE.NS'}
             className="bt-input"
+            market={market}
           />
         </div>
 
