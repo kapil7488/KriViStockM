@@ -1,4 +1,4 @@
-import { StockQuote, StockSignal, IndicatorSnapshot, RiskParameters, SignalType, TradingMode, ModelBreakdown } from '../types';
+import { StockQuote, StockSignal, IndicatorSnapshot, RiskParameters, SignalType, TradingMode, ModelBreakdown, MasterSignalData, TradePlan } from '../types';
 import { computeSnapshot } from './indicators';
 
 function clamp(value: number, min: number, max: number): number {
@@ -412,6 +412,195 @@ export function generateSignal(symbol: string, quotes: StockQuote[], params: Ris
     generatedAt: new Date().toISOString(),
     mode, indicators: snapshot,
     models,
+  };
+}
+
+// ──────────────────────────────────────────────────────────────
+// MASTER SIGNAL GENERATOR
+// Processes all 4 model outputs into a single weighted decision
+// with confidence scoring, regime detection, and risk assessment.
+// Implements performance-tuned weights: XGBoost 40%, LSTM-Transformer 35%,
+// GA-LSTM 15%, H-BLSTM 10%.
+// ──────────────────────────────────────────────────────────────
+const MASTER_WEIGHTS: Record<string, number> = {
+  'LSTM-Transformer Hybrid': 0.35,
+  'XGBoost (Optimized)': 0.40,
+  'GA-LSTM': 0.15,
+  'H-BLSTM': 0.10,
+};
+
+export function generateMasterSignal(sig: StockSignal): MasterSignalData {
+  const models = sig.models;
+  const snap = sig.indicators;
+
+  // Convert each model signal to numeric: StrongBuy=+1.5, Buy=+1, Hold=0, Sell=-1, StrongSell=-1.5
+  function signalToNumeric(s: SignalType): number {
+    switch (s) {
+      case 'StrongBuy': return 1.5;
+      case 'Buy': return 1;
+      case 'Hold': return 0;
+      case 'Sell': return -1;
+      case 'StrongSell': return -1.5;
+    }
+  }
+
+  // Calculate weighted contributions per model
+  let totalScore = 0;
+  const contributions = models.map(m => {
+    const weight = MASTER_WEIGHTS[m.name] ?? (1 / models.length);
+    const signalVal = signalToNumeric(m.signal);
+    const confNorm = m.confidence / 100;
+    const weighted = signalVal * confNorm * weight;
+    totalScore += weighted;
+    return {
+      name: m.name,
+      signal: m.signal,
+      confidence: m.confidence,
+      weight: Math.round(weight * 100),
+      weightedContribution: Math.round(weighted * 10000) / 100,
+      score: m.score,
+    };
+  });
+
+  // Compute model agreement (0-100)
+  const signals = models.map(m => signalToNumeric(m.signal));
+  const meanSig = signals.reduce((s, v) => s + v, 0) / signals.length;
+  const variance = signals.reduce((s, v) => s + (v - meanSig) ** 2, 0) / signals.length;
+  const agreement = Math.round(Math.max(0, (1 - variance / 2)) * 100);
+
+  // Market regime detection from indicators
+  const atrPct = snap.atr / sig.entryPrice;
+  let regime = 'Neutral';
+  if (snap.maCrossoverBullish && snap.macdHistogram > 0) regime = 'Bullish Trend';
+  else if (!snap.maCrossoverBullish && snap.macdHistogram < 0) regime = 'Bearish Trend';
+  else if (atrPct > 0.03) regime = 'High Volatility';
+  else if (atrPct < 0.01) regime = 'Low Volatility / Compression';
+  else if (snap.rsi > 40 && snap.rsi < 60) regime = 'Range-Bound';
+
+  // Final recommendation based on totalScore (range: roughly -1.5 to +1.5)
+  let recommendation: string;
+  let emoji: string;
+  let color: string;
+  if (totalScore > 0.40) { recommendation = 'STRONG BUY'; emoji = '🚀'; color = '#22c55e'; }
+  else if (totalScore > 0.15) { recommendation = 'BUY'; emoji = '📈'; color = '#4ade80'; }
+  else if (totalScore < -0.40) { recommendation = 'STRONG SELL'; emoji = '📉'; color = '#ef4444'; }
+  else if (totalScore < -0.15) { recommendation = 'SELL'; emoji = '🔻'; color = '#f97316'; }
+  else { recommendation = 'HOLD / NEUTRAL'; emoji = '⏸️'; color = '#94a3b8'; }
+
+  const confidence = Math.round(Math.min(99, Math.abs(totalScore) * 100));
+
+  // Risk level from volatility + drawdown potential
+  let riskLevel: 'Low' | 'Medium' | 'High' = 'Medium';
+  if (atrPct > 0.03 || agreement < 40) riskLevel = 'High';
+  else if (atrPct < 0.015 && agreement > 70) riskLevel = 'Low';
+
+  // Conviction based on agreement + confidence
+  let conviction: 'Weak' | 'Moderate' | 'Strong' | 'Very Strong' = 'Moderate';
+  if (agreement >= 80 && confidence >= 50) conviction = 'Very Strong';
+  else if (agreement >= 60 && confidence >= 30) conviction = 'Strong';
+  else if (agreement < 40 || confidence < 15) conviction = 'Weak';
+
+  // Best timeframe suggestion
+  let bestTimeframe = 'Swing (3–10 days)';
+  if (atrPct > 0.025) bestTimeframe = 'Short-term / Intraday (high volatility)';
+  else if (atrPct < 0.01 && snap.maCrossoverBullish) bestTimeframe = 'Positional (2–6 weeks)';
+  else if (regime === 'Range-Bound') bestTimeframe = 'Wait for breakout or scalp range';
+
+  // Action text
+  let action: string;
+  if (recommendation.includes('BUY')) {
+    action = `Enter Long at ${sig.entryPrice.toFixed(2)} · SL ${sig.stopLoss.toFixed(2)} · TP ${sig.takeProfit.toFixed(2)}`;
+  } else if (recommendation.includes('SELL')) {
+    action = `Exit / Short at ${sig.entryPrice.toFixed(2)} · SL ${sig.stopLoss.toFixed(2)} · TP ${sig.takeProfit.toFixed(2)}`;
+  } else {
+    action = 'Wait for clearer setup — no strong edge detected';
+  }
+
+  return {
+    recommendation,
+    emoji,
+    confidence,
+    totalScore: Math.round(totalScore * 1000) / 1000,
+    action,
+    color,
+    modelContributions: contributions,
+    agreement,
+    regime,
+    riskLevel,
+    bestTimeframe,
+    conviction,
+  };
+}
+
+// ──────────────────────────────────────────────────────────────
+// TRADE PLAN GENERATOR
+// Calculates position sizing: how many shares to buy,
+// % of portfolio allocation, risk/reward, Kelly criterion,
+// and volatility-adjusted sizing.
+// ──────────────────────────────────────────────────────────────
+export function generateTradePlan(
+  sig: StockSignal,
+  master: MasterSignalData,
+  accountBalance: number,
+  riskPerTradePct: number,
+): TradePlan {
+  const entry = sig.entryPrice;
+  const sl = sig.stopLoss;
+  const tp = sig.takeProfit;
+
+  // Risk per unit = distance from entry to stop loss
+  const riskPerUnit = Math.abs(entry - sl);
+  const rewardPerUnit = Math.abs(tp - entry);
+
+  // Position sizing: risk-based (same formula as the Python code)
+  const amountToRisk = accountBalance * (riskPerTradePct / 100);
+  const suggestedUnits = riskPerUnit > 0 ? Math.floor(amountToRisk / riskPerUnit) : 0;
+
+  const totalCost = suggestedUnits * entry;
+  const portfolioPct = accountBalance > 0 ? (totalCost / accountBalance) * 100 : 0;
+  const riskAmount = suggestedUnits * riskPerUnit;
+  const riskPct = accountBalance > 0 ? (riskAmount / accountBalance) * 100 : 0;
+  const rewardAmount = suggestedUnits * rewardPerUnit;
+  const riskRewardRatio = riskAmount > 0 ? rewardAmount / riskAmount : 0;
+
+  const stopLossPct = entry > 0 ? (riskPerUnit / entry) * 100 : 0;
+  const takeProfitPct = entry > 0 ? (rewardPerUnit / entry) * 100 : 0;
+
+  // Break-even: how many wins needed per 10 trades
+  const breakEvenTrades = riskRewardRatio > 0
+    ? Math.ceil(10 / (1 + riskRewardRatio))
+    : 10;
+
+  // Kelly criterion: optimal position % = (W × R - L) / R
+  // W = estimated win rate from confidence, R = reward/risk ratio, L = 1 - W
+  const estWinRate = Math.min(0.75, Math.max(0.30, master.confidence / 100));
+  const kellyRaw = riskRewardRatio > 0
+    ? (estWinRate * riskRewardRatio - (1 - estWinRate)) / riskRewardRatio
+    : 0;
+  const kellyPct = Math.max(0, Math.min(25, kellyRaw * 100)); // cap at 25%
+
+  // Volatility adjustment: reduce position if ATR > 3% of price
+  const atrPct = sig.indicators.atr / entry;
+  const volatilityAdjusted = atrPct > 0.03;
+  const volReduction = volatilityAdjusted ? 0.7 : 1; // 30% reduction
+  const adjustedUnits = Math.floor(suggestedUnits * volReduction);
+  const adjustedCost = adjustedUnits * entry;
+
+  return {
+    suggestedUnits,
+    totalCost: r2(totalCost),
+    portfolioPct: r2(portfolioPct),
+    riskAmount: r2(riskAmount),
+    riskPct: r2(riskPct),
+    rewardAmount: r2(rewardAmount),
+    riskRewardRatio: r2(riskRewardRatio),
+    stopLossPct: r2(stopLossPct),
+    takeProfitPct: r2(takeProfitPct),
+    breakEvenTrades,
+    kellyPct: r2(kellyPct),
+    volatilityAdjusted,
+    adjustedUnits,
+    adjustedCost: r2(adjustedCost),
   };
 }
 

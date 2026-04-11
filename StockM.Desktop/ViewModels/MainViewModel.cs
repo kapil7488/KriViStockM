@@ -32,6 +32,7 @@ public class MainViewModel : INotifyPropertyChanged
 {
     private readonly ScoringEngine _scoringEngine = new();
     private readonly RiskManager _riskManager = new();
+    private readonly BacktestEngine _backtestEngine = new();
 
     private string _symbolInput = "AAPL";
     private string _apiKey = "";
@@ -41,15 +42,26 @@ public class MainViewModel : INotifyPropertyChanged
     private RiskAssessment? _currentRisk;
     private RiskParameters _riskParameters = new();
     private TradingMode _selectedMode = TradingMode.Normal;
+    private List<StockQuote> _currentQuotes = [];
+
+    // Backtest state
+    private StrategyId _selectedStrategy = StrategyId.SmaCross;
+    private BacktestResult? _backtestResult;
+    private ObservableCollection<BacktestResult> _compareResults = [];
+    private bool _isBacktesting;
 
     public MainViewModel()
     {
         AnalyzeCommand = new RelayCommand(_ => _ = AnalyzeAsync(), _ => !IsLoading);
         AddToWatchlistCommand = new RelayCommand(_ => AddToWatchlist(), _ => CurrentSignal != null);
+        RunBacktestCommand = new RelayCommand(_ => _ = RunBacktestAsync(), _ => _currentQuotes.Count > 121 && !IsBacktesting);
+        CompareAllCommand = new RelayCommand(_ => _ = CompareAllAsync(), _ => _currentQuotes.Count > 121 && !IsBacktesting);
         Signals = new ObservableCollection<StockSignal>();
         WatchlistSymbols = new ObservableCollection<string> { "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "NVDA", "META", "JPM" };
         ChartPrices = new ObservableCollection<decimal>();
         ChartDates = new ObservableCollection<string>();
+        BacktestTrades = new ObservableCollection<BacktestTrade>();
+        AvailableStrategies = new ObservableCollection<StrategyDef>(StrategyDef.All);
     }
 
     public string SymbolInput
@@ -109,6 +121,39 @@ public class MainViewModel : INotifyPropertyChanged
 
     public ICommand AnalyzeCommand { get; }
     public ICommand AddToWatchlistCommand { get; }
+    public ICommand RunBacktestCommand { get; }
+    public ICommand CompareAllCommand { get; }
+
+    public ObservableCollection<StrategyDef> AvailableStrategies { get; }
+    public ObservableCollection<BacktestTrade> BacktestTrades { get; }
+
+    public StrategyId SelectedStrategy
+    {
+        get => _selectedStrategy;
+        set { _selectedStrategy = value; OnPropertyChanged(); }
+    }
+
+    public BacktestResult? BacktestResult
+    {
+        get => _backtestResult;
+        set { _backtestResult = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasBacktestResult)); }
+    }
+
+    public bool HasBacktestResult => _backtestResult != null;
+
+    public ObservableCollection<BacktestResult> CompareResults
+    {
+        get => _compareResults;
+        set { _compareResults = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasCompareResults)); }
+    }
+
+    public bool HasCompareResults => _compareResults.Count > 0;
+
+    public bool IsBacktesting
+    {
+        get => _isBacktesting;
+        set { _isBacktesting = value; OnPropertyChanged(); }
+    }
 
     public async Task AnalyzeAsync()
     {
@@ -145,6 +190,7 @@ public class MainViewModel : INotifyPropertyChanged
             // Generate signal
             var signal = _scoringEngine.GenerateSignal(SymbolInput, data.Quotes, RiskParameters);
             CurrentSignal = signal;
+            _currentQuotes = data.Quotes;
 
             // Risk assessment
             CurrentRisk = _riskManager.Evaluate(signal, RiskParameters);
@@ -191,6 +237,91 @@ public class MainViewModel : INotifyPropertyChanged
         if (CurrentSignal != null && !WatchlistSymbols.Contains(CurrentSignal.Symbol))
         {
             WatchlistSymbols.Add(CurrentSignal.Symbol);
+        }
+    }
+
+    public async Task RunBacktestAsync()
+    {
+        if (_currentQuotes.Count < 121 || CurrentSignal == null) return;
+        IsBacktesting = true;
+        StatusMessage = $"Running {StrategyDef.All.First(s => s.Id == SelectedStrategy).Label} backtest on {CurrentSignal.Symbol}...";
+
+        try
+        {
+            var config = new BacktestConfig
+            {
+                Strategy = SelectedStrategy,
+                MaxHoldingDays = 20,
+                InitialCapital = RiskParameters.PortfolioValue,
+                RiskPerTradePct = 2.0,
+                StopLossPct = (double)RiskParameters.StopLossPercent * 100,
+                TakeProfitPct = (double)RiskParameters.TakeProfitPercent * 100,
+                CommissionPct = 0.1,
+            };
+
+            var result = await Task.Run(() => _backtestEngine.Run(CurrentSignal.Symbol, _currentQuotes, config));
+            BacktestResult = result;
+
+            BacktestTrades.Clear();
+            foreach (var t in result.Trades.Take(50))
+                BacktestTrades.Add(t);
+
+            CompareResults.Clear();
+            OnPropertyChanged(nameof(HasCompareResults));
+
+            StatusMessage = $"Backtest: {result.Strategy.Label} — {result.TotalTrades} trades, " +
+                           $"Win {result.WinRate}%, Net {result.NetProfitPct:+0.0;-0.0}%, Sharpe {result.SharpeRatio:F2}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Backtest error: {ex.Message}";
+        }
+        finally
+        {
+            IsBacktesting = false;
+        }
+    }
+
+    public async Task CompareAllAsync()
+    {
+        if (_currentQuotes.Count < 121 || CurrentSignal == null) return;
+        IsBacktesting = true;
+        StatusMessage = "Comparing all strategies...";
+
+        try
+        {
+            var config = new BacktestConfig
+            {
+                MaxHoldingDays = 20,
+                InitialCapital = RiskParameters.PortfolioValue,
+                RiskPerTradePct = 2.0,
+                StopLossPct = (double)RiskParameters.StopLossPercent * 100,
+                TakeProfitPct = (double)RiskParameters.TakeProfitPercent * 100,
+                CommissionPct = 0.1,
+            };
+
+            var results = await Task.Run(() => _backtestEngine.CompareAll(CurrentSignal.Symbol, _currentQuotes, config));
+
+            CompareResults.Clear();
+            foreach (var r in results) CompareResults.Add(r);
+            OnPropertyChanged(nameof(HasCompareResults));
+
+            if (results.Count > 0)
+            {
+                BacktestResult = results[0]; // Show best result
+                BacktestTrades.Clear();
+                foreach (var t in results[0].Trades.Take(50)) BacktestTrades.Add(t);
+            }
+
+            StatusMessage = $"Compared {results.Count} strategies — Best: {results[0].Strategy.Label} ({results[0].NetProfitPct:+0.0;-0.0}%)";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Compare error: {ex.Message}";
+        }
+        finally
+        {
+            IsBacktesting = false;
         }
     }
 

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
   StockBar, StockSignal, RiskAssessment, RiskParameters, FundamentalData, LiveQuote,
   Market, DEFAULT_RISK_PARAMS, AllTimeData,
@@ -11,6 +11,7 @@ import {
 } from '../services/stockApi';
 import { generateSignal } from '../services/scoringEngine';
 import { evaluateRisk } from '../services/riskManager';
+import { runFullMLPrediction, type MLPrediction } from '../services/mlModels';
 
 export type DataSource = 'simulated' | 'live-api' | 'live-patched';
 
@@ -26,6 +27,8 @@ interface UseStockDataReturn {
   signalHistory: StockSignal[];
   dataSource: DataSource;
   allTimeData: AllTimeData | null;
+  mlPrediction: MLPrediction | null;
+  mlLoading: boolean;
   analyze: (symbol: string, market: Market, apiKey?: string, finnhubKey?: string) => Promise<void>;
   fetchWatchlist: (symbols: string[], market: Market, finnhubKey?: string) => Promise<void>;
   refreshQuote: (symbol: string, market: Market, finnhubKey?: string) => Promise<void>;
@@ -45,8 +48,11 @@ export function useStockData(): UseStockDataReturn {
   const [signalHistory, setSignalHistory] = useState<StockSignal[]>([]);
   const [dataSource, setDataSource] = useState<DataSource>('simulated');
   const [allTimeData, setAllTimeData] = useState<AllTimeData | null>(null);
+  const [mlPrediction, setMlPrediction] = useState<MLPrediction | null>(null);
+  const [mlLoading, setMlLoading] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<number>(Date.now());
   const riskParams = DEFAULT_RISK_PARAMS;
+  const mlRequestId = useRef(0); // cancel stale ML requests on rapid symbol changes
 
   const analyze = useCallback(async (symbol: string, market: Market, apiKey?: string, finnhubKey?: string) => {
     setLoading(true);
@@ -168,6 +174,15 @@ export function useStockData(): UseStockDataReturn {
 
       const riskAssessment = evaluateRisk(sig, riskParams);
       setRisk(riskAssessment);
+
+      // Run TF.js ML models in background (non-blocking, cancellable)
+      const thisRequestId = ++mlRequestId.current;
+      setMlLoading(true);
+      setMlPrediction(null);
+      runFullMLPrediction(data.quotes, symbol, sig.indicators)
+        .then(pred => { if (mlRequestId.current === thisRequestId) setMlPrediction(pred); })
+        .catch(err => console.warn('[StockM] ML prediction failed:', err))
+        .finally(() => { if (mlRequestId.current === thisRequestId) setMlLoading(false); });
 
       // Fundamentals: Yahoo quoteSummary (real data) → Finnhub metrics → live quote → synthetic
       try {
@@ -294,6 +309,7 @@ export function useStockData(): UseStockDataReturn {
   return {
     loading, error, stockData, signal, risk, fundamentals,
     liveQuote, watchlistQuotes, signalHistory, dataSource, allTimeData,
+    mlPrediction, mlLoading,
     analyze, fetchWatchlist, refreshQuote, lastRefreshed, riskParams,
   };
 }

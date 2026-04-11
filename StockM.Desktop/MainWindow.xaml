@@ -100,12 +100,41 @@
             </ItemsControl>
         </Border>
 
-        <!-- Main Content -->
-        <Grid Grid.Row="2" Margin="18,6">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="360"/>
-            </Grid.ColumnDefinitions>
+        <!-- Main Content with Tabs -->
+        <TabControl Grid.Row="2" Margin="18,6" Background="Transparent" BorderThickness="0"
+                    Foreground="{StaticResource TextPrimaryBrush}">
+            <TabControl.Resources>
+                <Style TargetType="TabItem">
+                    <Setter Property="Background" Value="{StaticResource SecondaryBgBrush}"/>
+                    <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                    <Setter Property="Padding" Value="16,8"/>
+                    <Setter Property="FontSize" Value="13"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="TabItem">
+                                <Border x:Name="Bd" Background="{StaticResource CardBgBrush}"
+                                        CornerRadius="8,8,0,0" Padding="{TemplateBinding Padding}" Margin="2,0">
+                                    <ContentPresenter ContentSource="Header" HorizontalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentBlueBrush}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </TabControl.Resources>
+
+            <!-- ═══ Analysis Tab ═══ -->
+            <TabItem Header="📊 Analysis" Foreground="{StaticResource TextPrimaryBrush}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="360"/>
+                    </Grid.ColumnDefinitions>
 
             <!-- Left: Chart + Signal -->
             <Grid Grid.Column="0">
@@ -367,6 +396,280 @@
                 </StackPanel>
             </ScrollViewer>
         </Grid>
+            </TabItem>
+
+            <!-- ═══ Backtest Tab ═══ -->
+            <TabItem Header="🧪 Backtest" Foreground="{StaticResource TextPrimaryBrush}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="280"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left: Config -->
+                    <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="⚙️ Backtest Config" FontSize="16" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,12"/>
+
+                                    <TextBlock Text="Strategy" Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" Margin="0,0,0,4"/>
+                                    <ComboBox ItemsSource="{Binding AvailableStrategies}"
+                                              SelectedValue="{Binding SelectedStrategy}"
+                                              SelectedValuePath="Id"
+                                              DisplayMemberPath="Label"
+                                              Background="{StaticResource CardBgBrush}"
+                                              Foreground="{StaticResource TextPrimaryBrush}"
+                                              Margin="0,0,0,12"/>
+
+                                    <Button Content="▶ Run Backtest" Command="{Binding RunBacktestCommand}"
+                                            Style="{StaticResource PrimaryButton}" Margin="0,0,0,8"/>
+
+                                    <Button Content="📊 Compare All Strategies" Command="{Binding CompareAllCommand}"
+                                            Margin="0,0,0,8" Padding="12,8" Cursor="Hand"
+                                            FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"
+                                            BorderThickness="1" BorderBrush="{StaticResource BorderBrush}">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{StaticResource CardBgBrush}" CornerRadius="8"
+                                                        Padding="{TemplateBinding Padding}"
+                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                        BorderThickness="{TemplateBinding BorderThickness}">
+                                                    <ContentPresenter HorizontalAlignment="Center"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+
+                                    <TextBlock Text="Analyze a stock first, then run backtest."
+                                               FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"
+                                               TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Strategy Comparison Results -->
+                            <Border Style="{StaticResource Card}"
+                                    Visibility="{Binding HasCompareResults, Converter={StaticResource BoolToVis}}">
+                                <StackPanel>
+                                    <TextBlock Text="📊 Strategy Comparison" FontSize="14" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+                                    <ItemsControl ItemsSource="{Binding CompareResults}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Padding="6,5" Margin="0,2" CornerRadius="6" Background="{StaticResource CardBgBrush}">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{Binding Strategy.Label}" FontSize="11" FontWeight="SemiBold"
+                                                                   Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="1" FontSize="11" FontWeight="Bold" Margin="8,0"
+                                                                   VerticalAlignment="Center"
+                                                                   Text="{Binding NetProfitPct, StringFormat='{}{0:+0.0;-0.0}%'}">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Foreground" Value="{StaticResource AccentRedBrush}"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding NetProfit, Converter={StaticResource ScoreToColor}}" Value="True">
+                                                                            <Setter Property="Foreground" Value="{StaticResource AccentGreenBrush}"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                        <TextBlock Grid.Column="2" Text="{Binding WinRate, StringFormat='{}{0:F0}% win'}"
+                                                                   FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"
+                                                                   VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Right: Results -->
+                    <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Visibility="{Binding HasBacktestResult, Converter={StaticResource BoolToVis}}">
+                            <!-- Summary Metrics -->
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <TextBlock Text="{Binding BacktestResult.Strategy.Emoji}" FontSize="20" Margin="0,0,8,0"/>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding BacktestResult.Strategy.Label}" FontSize="16" FontWeight="Bold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                            <TextBlock Text="{Binding BacktestResult.DataRange}" FontSize="10"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <!-- Metrics Grid -->
+                                    <UniformGrid Columns="4" Margin="0,0,0,8">
+                                        <StackPanel Margin="4">
+                                            <TextBlock Text="NET PROFIT" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}" FontWeight="SemiBold"/>
+                                            <TextBlock FontSize="18" FontWeight="Bold" Text="{Binding BacktestResult.NetProfit, StringFormat='${0:N0}'}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{StaticResource AccentRedBrush}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasBacktestResult}" Value="True">
+                                                                <Setter Property="Foreground" Value="{StaticResource AccentGreenBrush}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <TextBlock Text="{Binding BacktestResult.NetProfitPct, StringFormat='{}{0:+0.0;-0.0}%'}"
+                                                       FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        </StackPanel>
+
+                                        <StackPanel Margin="4">
+                                            <TextBlock Text="WIN RATE" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding BacktestResult.WinRate, StringFormat='{}{0:F1}%'}"
+                                                       FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                                            <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}">
+                                                <TextBlock.Text>
+                                                    <MultiBinding StringFormat="{}{0}W / {1}L">
+                                                        <Binding Path="BacktestResult.WinningTrades"/>
+                                                        <Binding Path="BacktestResult.LosingTrades"/>
+                                                    </MultiBinding>
+                                                </TextBlock.Text>
+                                            </TextBlock>
+                                        </StackPanel>
+
+                                        <StackPanel Margin="4">
+                                            <TextBlock Text="SHARPE" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding BacktestResult.SharpeRatio, StringFormat='{}{0:F2}'}"
+                                                       FontSize="18" FontWeight="Bold" Foreground="{StaticResource AccentBlueBrush}"/>
+                                            <TextBlock Text="annualized" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        </StackPanel>
+
+                                        <StackPanel Margin="4">
+                                            <TextBlock Text="MAX DRAWDOWN" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding BacktestResult.MaxDrawdownPct, StringFormat='-{0:F1}%'}"
+                                                       FontSize="18" FontWeight="Bold" Foreground="{StaticResource AccentRedBrush}"/>
+                                            <TextBlock Text="{Binding BacktestResult.MaxDrawdown, StringFormat='${0:N0}'}"
+                                                       FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        </StackPanel>
+                                    </UniformGrid>
+
+                                    <!-- Secondary Metrics -->
+                                    <UniformGrid Columns="4" Margin="0,4,0,0">
+                                        <StackPanel Margin="4">
+                                            <TextBlock Text="TOTAL TRADES" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            <TextBlock Text="{Binding BacktestResult.TotalTrades}" FontSize="14" FontWeight="Bold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                        </StackPanel>
+                                        <StackPanel Margin="4">
+                                            <TextBlock Text="PROFIT FACTOR" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            <TextBlock Text="{Binding BacktestResult.ProfitFactor, StringFormat='{}{0:F2}'}" FontSize="14" FontWeight="Bold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                        </StackPanel>
+                                        <StackPanel Margin="4">
+                                            <TextBlock Text="AVG WIN" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            <TextBlock Text="{Binding BacktestResult.AvgWin, StringFormat='${0:N0}'}" FontSize="14" FontWeight="Bold"
+                                                       Foreground="{StaticResource AccentGreenBrush}"/>
+                                        </StackPanel>
+                                        <StackPanel Margin="4">
+                                            <TextBlock Text="AVG LOSS" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            <TextBlock Text="{Binding BacktestResult.AvgLoss, StringFormat='${0:N0}'}" FontSize="14" FontWeight="Bold"
+                                                       Foreground="{StaticResource AccentRedBrush}"/>
+                                        </StackPanel>
+                                    </UniformGrid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Trade Log -->
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel>
+                                    <TextBlock Text="📋 Trade Log" FontSize="14" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8"/>
+
+                                    <!-- Header -->
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="70"/>
+                                            <ColumnDefinition Width="70"/>
+                                            <ColumnDefinition Width="40"/>
+                                            <ColumnDefinition Width="60"/>
+                                            <ColumnDefinition Width="60"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="50"/>
+                                            <ColumnDefinition Width="50"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Entry" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        <TextBlock Grid.Column="1" Text="Exit" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        <TextBlock Grid.Column="2" Text="Type" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        <TextBlock Grid.Column="3" Text="Entry$" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        <TextBlock Grid.Column="4" Text="Exit$" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        <TextBlock Grid.Column="5" Text="P&amp;L" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        <TextBlock Grid.Column="6" Text="P&amp;L%" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        <TextBlock Grid.Column="7" Text="Exit" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                    </Grid>
+
+                                    <ItemsControl ItemsSource="{Binding BacktestTrades}" MaxHeight="400">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Padding="0,3" Margin="0,1" CornerRadius="4" Background="{StaticResource CardBgBrush}">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="70"/>
+                                                            <ColumnDefinition Width="70"/>
+                                                            <ColumnDefinition Width="40"/>
+                                                            <ColumnDefinition Width="60"/>
+                                                            <ColumnDefinition Width="60"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="50"/>
+                                                            <ColumnDefinition Width="50"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="{Binding EntryDate}" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}" Margin="4,0"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding ExitDate}" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}" Margin="4,0"/>
+                                                        <TextBlock Grid.Column="2" Text="{Binding Type}" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource AccentBlueBrush}" Margin="4,0"/>
+                                                        <TextBlock Grid.Column="3" Text="{Binding EntryPrice, StringFormat='${0:F2}'}" FontSize="9" Foreground="{StaticResource TextPrimaryBrush}" Margin="4,0"/>
+                                                        <TextBlock Grid.Column="4" Text="{Binding ExitPrice, StringFormat='${0:F2}'}" FontSize="9" Foreground="{StaticResource TextPrimaryBrush}" Margin="4,0"/>
+                                                        <TextBlock Grid.Column="5" Text="{Binding Pnl, StringFormat='${0:F2}'}" FontSize="9" FontWeight="Bold" Margin="4,0">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Foreground" Value="{StaticResource AccentRedBrush}"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsWin}" Value="True">
+                                                                            <Setter Property="Foreground" Value="{StaticResource AccentGreenBrush}"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                        <TextBlock Grid.Column="6" Text="{Binding PnlPct, StringFormat='{}{0:F1}%'}" FontSize="9" Margin="4,0">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Foreground" Value="{StaticResource AccentRedBrush}"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsWin}" Value="True">
+                                                                            <Setter Property="Foreground" Value="{StaticResource AccentGreenBrush}"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                        <TextBlock Grid.Column="7" Text="{Binding ExitReason}" FontSize="9" Foreground="{StaticResource TextSecondaryBrush}" Margin="4,0"/>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </TabItem>
+        </TabControl>
 
         <!-- Status Bar -->
         <Border Grid.Row="3" Background="{StaticResource SecondaryBgBrush}" Padding="24,10">

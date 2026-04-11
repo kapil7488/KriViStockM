@@ -5,6 +5,10 @@ import { computeSnapshot } from '../services/indicators';
 import { generateSignal } from '../services/scoringEngine';
 import { getScanUniverse } from '../services/stockScanner';
 import { DEFAULT_RISK_PARAMS } from '../types';
+import {
+  STRATEGIES, StrategyId, BacktestConfig, BacktestResult, runBacktest,
+  HoldingPeriod,
+} from '../services/backtestEngine';
 
 // ── Types ──────────────────────────────────────────────────────
 interface ChatMessage {
@@ -136,6 +140,8 @@ type Intent =
   | { type: 'current_signal' }
   | { type: 'best_intraday' }
   | { type: 'best_swing' }
+  | { type: 'backtest_stock'; symbol: string; strategy: StrategyId | 'all'; period: HoldingPeriod }
+  | { type: 'backtest_screener'; strategy: StrategyId | 'all'; period: HoldingPeriod; count: number }
   | { type: 'general_question'; query: string };
 
 const STOP_WORDS = new Set(['is','a','the','and','for','how','why','what','can','does','this','that','with','from','best','top','good','bad','should','i','buy','sell','it','do','to','in','of','on','my','me','will','be','an','or','not','are','was','have','has','been','would','could','any','there','about','stock','share','crypto','coin','token','market','which','when','where','who','whom','whose','much','many','more','most','some','all','each','every','both','few','no','nor','so','than','too','very','just','also','now','then','here','only','own','same','other','such','into','over','after','before','between','through','during','above','below','up','down','out','off','again','further','once','new','old','like','well','still','even','back','let','us','our','your','they','them','their','its','he','she','his','her','we','give','made','make','way','may','say','said','did','get','got','go','goes','went','come','came','take','took','use','used','know','think','see','look','want','need','find','tell','ask','work','try','call','keep','help','start','turn','show','play','move','live','believe','feel','set','put','run','hold','bring','happen','write','provide','sit','stand','lose','pay','meet','include','continue','learn','change','lead','understand','watch','follow','stop','create','speak','read','allow','add','spend','grow','open','walk','win','offer','remember','love','consider','appear','wait','serve','die','send','expect','build','stay','fall','cut','reach','remain','suggest','raise','pass','long','short','term','day','week','month','year','today','yesterday','tomorrow','current','next','last','first','second','time','algo','algorithm','strategy','indicator','indicators','trading','invest','investing','investment','portfolio','risk','analysis','analyze','money','profit','loss','gain','return','returns','price','prices','value','high','low','close','open','volume','chart','graph','data','pattern','trend','signal','signals','entry','exit','target','support','resistance','level','levels','point','points','average','moving','simple','exponential','relative','strength','divergence','convergence','band','bands','bollinger','stochastic','momentum','breakout','reversal','correction','bear','bull','bullish','bearish','neutral','oversold','overbought','volatile','volatility']);
@@ -172,6 +178,39 @@ function parseIntent(input: string, _currentSymbol: string): Intent {
   }
   if ((lower.includes('best') || lower.includes('top') || lower.includes('recommend') || lower.includes('which')) && (lower.includes('swing') || lower.includes('short term'))) {
     return { type: 'best_swing' };
+  }
+
+  // ── Backtest intent detection ─────────────────────────────────
+  if (/\b(backtest|back test|back-test|test strategy|test .+ strategy|efficiency|win rate)\b/.test(lower)) {
+    const period: HoldingPeriod = /\b(long\s*term|positional|invest)\b/.test(lower) ? 'longterm' : 'swing';
+    // Detect strategy name
+    let strategy: StrategyId | 'all' = 'all';
+    const stratMap: Record<string, StrategyId> = {
+      'vwap': 'vwap', 'rsi': 'rsi', 'macd': 'macd', 'bollinger': 'bollinger', 'bb': 'bollinger',
+      'stochastic': 'stochastic', 'stoch': 'stochastic', 'sma cross': 'sma-cross', 'sma': 'sma-cross',
+      'golden cross': 'sma-cross', 'death cross': 'sma-cross', 'ema cross': 'ema-cross', 'ema': 'ema-cross',
+      'atr': 'atr-breakout', 'atr breakout': 'atr-breakout',
+      'momentum': 'combo-momentum', 'trend': 'combo-trend', 'mean revert': 'combo-mean-revert',
+      'mean reversion': 'combo-mean-revert', 'breakout': 'combo-breakout', 'swing combo': 'combo-swing',
+      'ml': 'ml-ensemble', 'ensemble': 'ml-ensemble', 'ml ensemble': 'ml-ensemble', 'algo': 'ml-ensemble',
+    };
+    for (const [key, id] of Object.entries(stratMap)) {
+      if (lower.includes(key)) { strategy = id; break; }
+    }
+    // Detect if it's for screener / top stocks
+    const topMatch = lower.match(/\b(top|screener|all stocks|universe|scan)\s*(\d+)?/);
+    const countMatch = lower.match(/\b(\d+)\s*(stock|top|pick)/);
+    if (topMatch || /\b(screener|top stocks|top picks|scan)\b/.test(lower)) {
+      const count = parseInt(topMatch?.[2] || countMatch?.[1] || '10', 10);
+      return { type: 'backtest_screener', strategy, period, count: Math.min(count, 20) };
+    }
+    // Single stock backtest
+    const sym = tryExtractStockFromSentence(lower, original) || resolveSymbol(lower.replace(/backtest|back test|back-test|test strategy|strategy|efficiency|win rate/gi, '').trim());
+    if (sym) {
+      return { type: 'backtest_stock', symbol: sym, strategy, period };
+    }
+    // If no symbol found, use current symbol
+    return { type: 'backtest_stock', symbol: _currentSymbol, strategy, period };
   }
 
   // General algo/strategy/market questions → general_question (intercept BEFORE stock extraction)
@@ -330,13 +369,145 @@ function formatCurrentSignalResponse(symbol: string, signal: StockSignal | null,
   return text;
 }
 
+// ── Backtest response formatters ────────────────────────────────
+function formatBacktestChatResponse(sym: string, results: BacktestResult[], cs: string, periodLabel: string, isCompare: boolean): string {
+  let text = `## 🧪 Backtest Report — ${sym} (${periodLabel})\n\n`;
+  text += `**Data:** ${results[0].dataRange} · ${results[0].totalBars} trading days\n\n`;
+
+  if (isCompare) {
+    // Strategy comparison table
+    text += `### Strategy Rankings\n\n`;
+    const top = results.slice(0, 14);
+    for (let i = 0; i < top.length; i++) {
+      const r = top[i];
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+      const profitColor = r.netProfitPct > 0 ? '🟢' : '🔴';
+      text += `${medal} **${r.strategy.emoji} ${r.strategy.label}**\n`;
+      text += `   ${profitColor} P/L: ${r.netProfitPct > 0 ? '+' : ''}${r.netProfitPct.toFixed(1)}% · WR: ${r.winRate.toFixed(0)}% · PF: ${r.profitFactor >= 999 ? '∞' : r.profitFactor.toFixed(2)} · Sharpe: ${r.sharpeRatio.toFixed(2)} · DD: ${r.maxDrawdownPct.toFixed(1)}% · ${r.totalTrades} trades\n\n`;
+    }
+
+    // Best strategy recommendation
+    const best = results[0];
+    const profitable = results.filter(r => r.netProfitPct > 0);
+    text += `---\n### 🏆 Best Strategy: **${best.strategy.emoji} ${best.strategy.label}**\n`;
+    text += `• **Net P/L:** ${cs}${best.netProfit.toLocaleString()} (${best.netProfitPct > 0 ? '+' : ''}${best.netProfitPct.toFixed(1)}%)\n`;
+    text += `• **Win Rate:** ${best.winRate.toFixed(1)}% across ${best.totalTrades} trades\n`;
+    text += `• **Profit Factor:** ${best.profitFactor >= 999 ? '∞' : best.profitFactor.toFixed(2)} · **Sharpe:** ${best.sharpeRatio.toFixed(2)}\n`;
+    text += `• **Max Drawdown:** ${best.maxDrawdownPct.toFixed(1)}%\n`;
+    text += `• **Avg Hold:** ${best.avgHoldingDays.toFixed(1)} days\n\n`;
+    text += `**${profitable.length}/${results.length}** strategies were profitable on ${sym}.\n\n`;
+
+    // Actionable insight
+    if (best.winRate >= 55 && best.profitFactor >= 1.5) {
+      text += `✅ **Verdict:** ${best.strategy.label} has a strong edge on ${sym} for ${periodLabel.toLowerCase()} trades. Efficiency: **${best.winRate.toFixed(0)}%** win rate with ${best.profitFactor.toFixed(1)}x profit factor.\n`;
+    } else if (best.netProfitPct > 0) {
+      text += `⚠️ **Verdict:** ${best.strategy.label} is marginally profitable. Consider combining it with volume filters or tighter SL/TP.\n`;
+    } else {
+      text += `❌ **Verdict:** No strategy showed strong results on ${sym}. This ${periodLabel.toLowerCase() === 'swing' ? 'stock may not be ideal for technical swing trading' : 'stock may need fundamental analysis instead'}.\n`;
+    }
+
+    // Best entry point insight
+    if (best.trades.length > 0) {
+      const wins = best.trades.filter(t => t.pnl > 0);
+      if (wins.length > 0) {
+        const avgWinHold = wins.reduce((s, t) => s + t.holdingDays, 0) / wins.length;
+        text += `\n**📌 Best Application:** Winning trades avg ${avgWinHold.toFixed(0)} days hold. `;
+        if (best.strategy.category === 'single') {
+          text += `Apply ${best.strategy.label} as primary signal, confirm with volume.`;
+        } else if (best.strategy.category === 'combo') {
+          text += `Wait for all indicators in the combo to align before entry.`;
+        } else {
+          text += `Use ensemble consensus ≥4/6 models agreeing for high-confidence entries.`;
+        }
+      }
+    }
+  } else {
+    // Single strategy result
+    const r = results[0];
+    const profitable = r.netProfit > 0;
+    text += `### ${r.strategy.emoji} ${r.strategy.label}\n\n`;
+    text += `${profitable ? '✅' : '❌'} **${profitable ? 'Profitable' : 'Unprofitable'}** · ${r.totalTrades} trades · ${r.dataRange}\n\n`;
+    text += `| Metric | Result | Target |\n`;
+    text += `|:---|:---|:---|\n`;
+    text += `| Net P/L | ${profitable ? '+' : ''}${cs}${r.netProfit.toLocaleString()} (${r.netProfitPct > 0 ? '+' : ''}${r.netProfitPct.toFixed(1)}%) | Positive |\n`;
+    text += `| Win Rate | ${r.winRate.toFixed(1)}% (${r.winningTrades}W/${r.losingTrades}L) | >50% |\n`;
+    text += `| Profit Factor | ${r.profitFactor >= 999 ? '∞' : r.profitFactor.toFixed(2)} | >1.75 |\n`;
+    text += `| Max Drawdown | ${r.maxDrawdownPct.toFixed(1)}% | <15% |\n`;
+    text += `| Sharpe Ratio | ${r.sharpeRatio.toFixed(2)} | >2.0 |\n`;
+    text += `| Avg Win / Loss | ${cs}${r.avgWin.toFixed(0)} / ${cs}${r.avgLoss.toFixed(0)} | Win > Loss |\n`;
+    text += `| Avg Holding | ${r.avgHoldingDays.toFixed(1)} days | — |\n`;
+    text += `| Best Streak | ▲${r.longestWinStreak} wins · ▼${r.longestLoseStreak} losses | — |\n\n`;
+
+    if (r.winRate >= 55 && r.profitFactor >= 1.5) {
+      text += `✅ **Efficiency: ${r.winRate.toFixed(0)}%** — This strategy works well on ${sym} for ${periodLabel.toLowerCase()} trades.\n`;
+    } else if (r.netProfitPct > 0) {
+      text += `⚠️ **Efficiency: ${r.winRate.toFixed(0)}%** — Marginally profitable. Add extra filters (volume, trend) to improve.\n`;
+    } else {
+      text += `❌ **Efficiency: ${r.winRate.toFixed(0)}%** — Not effective on ${sym}. Try a different strategy or timeframe.\n`;
+    }
+
+    text += `\n*Type "backtest all ${r.symbol}" to compare all 14 strategies on this stock.*`;
+  }
+
+  return text;
+}
+
+function formatScreenerBacktestResponse(
+  stockResults: { sym: string; best: BacktestResult; allResults: BacktestResult[] }[],
+  _cs: string, periodLabel: string, isMultiStrategy: boolean
+): string {
+  let text = `## 🧪 Screener Backtest Report (${periodLabel})\n\n`;
+  text += `Tested ${stockResults.length} stocks${isMultiStrategy ? ' × 14 strategies' : ''}\n\n`;
+
+  if (stockResults.length === 0) {
+    text += `❌ No stocks had enough data for backtesting.`;
+    return text;
+  }
+
+  text += `### 📊 Best Strategy per Stock\n\n`;
+  for (let i = 0; i < stockResults.length; i++) {
+    const { sym, best } = stockResults[i];
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+    const profitable = best.netProfitPct > 0;
+    text += `${medal} **${sym}** → ${best.strategy.emoji} ${best.strategy.label}\n`;
+    text += `   ${profitable ? '🟢' : '🔴'} P/L: ${best.netProfitPct > 0 ? '+' : ''}${best.netProfitPct.toFixed(1)}% · WR: ${best.winRate.toFixed(0)}% · PF: ${best.profitFactor >= 999 ? '∞' : best.profitFactor.toFixed(2)} · ${best.totalTrades} trades\n\n`;
+  }
+
+  // Overall insights
+  const profitable = stockResults.filter(s => s.best.netProfitPct > 0);
+  const topStock = stockResults[0];
+
+  text += `---\n### 🏆 Winner: **${topStock.sym}** with ${topStock.best.strategy.emoji} ${topStock.best.strategy.label}\n`;
+  text += `• **+${topStock.best.netProfitPct.toFixed(1)}%** return · ${topStock.best.winRate.toFixed(0)}% win rate · ${topStock.best.sharpeRatio.toFixed(2)} Sharpe\n`;
+  text += `• **${profitable.length}/${stockResults.length}** stocks had profitable strategies\n\n`;
+
+  // Strategy frequency analysis
+  if (isMultiStrategy) {
+    const stratCount: Record<string, number> = {};
+    for (const { best } of stockResults) {
+      stratCount[best.strategy.label] = (stratCount[best.strategy.label] || 0) + 1;
+    }
+    const sorted = Object.entries(stratCount).sort((a, b) => b[1] - a[1]);
+    if (sorted.length > 0) {
+      text += `### 🎯 Most Effective Strategies Across Stocks\n`;
+      for (const [name, count] of sorted.slice(0, 5)) {
+        text += `• **${name}** — best for ${count} stock${count > 1 ? 's' : ''}\n`;
+      }
+      text += `\n**📌 Recommendation:** Use **${sorted[0][0]}** as your primary strategy for ${periodLabel.toLowerCase()} trading in this market.\n`;
+    }
+  }
+
+  text += `\n*Type "backtest [strategy] [symbol]" for a detailed single-stock report.*`;
+  return text;
+}
+
 // ── Suggested prompts ──────────────────────────────────────────
 const US_SUGGESTIONS = [
   '🔍 Analyze AAPL',
   '📊 What does RSI mean?',
   '💡 Best stock for intraday?',
-  '📈 What is Overbought?',
-  '🎯 What is swing trading?',
+  '🧪 Backtest MACD on AAPL',
+  '🧪 Backtest top 10 screener',
   '⚡ Current signal',
 ];
 
@@ -344,16 +515,16 @@ const INDIA_SUGGESTIONS = [
   '🔍 Analyze RELIANCE',
   '📊 What does MACD mean?',
   '💡 Best stock for intraday?',
-  '📈 What is Golden Cross?',
-  '🎯 Compare TCS and INFY',
+  '🧪 Backtest RSI on RELIANCE',
+  '🧪 Backtest top 10 screener',
   '⚡ Current signal',
 ];
 
 const CRYPTO_SUGGESTIONS = [
   '🔍 Analyze BTC',
   '📊 What does MACD mean?',
-  '💡 Best crypto for swing?',
-  '📈 What is Bollinger Bands?',
+  '🧪 Backtest MACD on BTC',
+  '🧪 Backtest top 10 screener',
   '🎯 What is risk reward?',
   '⚡ Current signal',
 ];
@@ -531,6 +702,81 @@ export function ChatPanel({ market, currency, symbol, signal, stockData: _stockD
           break;
         }
 
+        case 'backtest_stock': {
+          const sym = intent.symbol;
+          const stratLabel = intent.strategy === 'all' ? 'all strategies' : STRATEGIES.find(s => s.id === intent.strategy)?.label || intent.strategy;
+          const periodLabel = intent.period === 'swing' ? 'Swing' : 'Long-Term';
+          addMessage('assistant', `🧪 Backtesting **${stratLabel}** on **${sym}** (${periodLabel})... Fetching historical data.`);
+          try {
+            const data = await fetchYahooHistorical(sym, market);
+            if (data.quotes.length < 250) {
+              response = `❌ Not enough data for **${sym}** — need at least 250 bars, got ${data.quotes.length}.`;
+              break;
+            }
+            const cs = currency === 'INR' ? '₹' : '$';
+            const strategies = intent.strategy === 'all' ? STRATEGIES : STRATEGIES.filter(s => s.id === intent.strategy);
+            const results: BacktestResult[] = [];
+            for (const strat of strategies) {
+              const cfg: BacktestConfig = {
+                strategy: strat.id,
+                holdingPeriod: intent.period,
+                initialCapital: 10000,
+                riskPerTradePct: 2,
+                stopLossPct: 5,
+                takeProfitPct: 15,
+                commissionPct: 0.1,
+              };
+              results.push(runBacktest(sym, data.quotes, cfg));
+            }
+            results.sort((a, b) => b.netProfitPct - a.netProfitPct);
+            response = formatBacktestChatResponse(sym, results, cs, periodLabel, intent.strategy === 'all');
+          } catch (e: any) {
+            response = `❌ Backtest failed for **${sym}**: ${e.message || 'Unknown error'}`;
+          }
+          break;
+        }
+
+        case 'backtest_screener': {
+          const stratLabel = intent.strategy === 'all' ? 'all strategies' : STRATEGIES.find(s => s.id === intent.strategy)?.label || intent.strategy;
+          const periodLabel = intent.period === 'swing' ? 'Swing' : 'Long-Term';
+          const count = intent.count;
+          addMessage('assistant', `🧪 Backtesting **${stratLabel}** on top **${count} ${assetWord}s** from screener (${periodLabel})... This may take a moment.`);
+          try {
+            const universe = getScanUniverse(market, 'default').slice(0, count);
+            const cs = currency === 'INR' ? '₹' : '$';
+            const strategies = intent.strategy === 'all' ? STRATEGIES : STRATEGIES.filter(s => s.id === intent.strategy);
+            // For screener mode, pick best strategy per stock
+            const stockResults: { sym: string; best: BacktestResult; allResults: BacktestResult[] }[] = [];
+            for (const sym of universe) {
+              try {
+                const data = await fetchYahooHistorical(sym, market);
+                if (data.quotes.length < 250) continue;
+                const results: BacktestResult[] = [];
+                for (const strat of strategies) {
+                  const cfg: BacktestConfig = {
+                    strategy: strat.id,
+                    holdingPeriod: intent.period,
+                    initialCapital: 10000,
+                    riskPerTradePct: 2,
+                    stopLossPct: 5,
+                    takeProfitPct: 15,
+                    commissionPct: 0.1,
+                  };
+                  results.push(runBacktest(sym, data.quotes, cfg));
+                }
+                results.sort((a, b) => b.netProfitPct - a.netProfitPct);
+                const best = results[0];
+                stockResults.push({ sym, best, allResults: results });
+              } catch { /* skip failed stocks */ }
+            }
+            stockResults.sort((a, b) => b.best.netProfitPct - a.best.netProfitPct);
+            response = formatScreenerBacktestResponse(stockResults, cs, periodLabel, strategies.length > 1);
+          } catch (e: any) {
+            response = `❌ Screener backtest failed: ${e.message || 'Unknown error'}`;
+          }
+          break;
+        }
+
         case 'general_question':
         default: {
           const exSym = isIndian ? 'RELIANCE' : isCrypto ? 'BTC' : 'AAPL';
@@ -540,9 +786,9 @@ export function ChatPanel({ market, currency, symbol, signal, stockData: _stockD
           } else if (msg.toLowerCase().includes('thank')) {
             response = `You're welcome! 😊 Happy trading on ${mktLabel}. Ask me anything else!`;
           } else if (msg.toLowerCase().includes('help')) {
-            response = `## What I Can Do (${mktLabel})\n\n• 🔍 **Analyze ${assetWord}s** — "analyze ${exSym}"\n• 📊 **Explain indicators** — "what is MACD?", "what does overbought mean?"\n• 📈 **Trading concepts** — "what is swing trading?", "explain stop loss"\n• 🏆 **Find best ${assetWord}s** — "best for intraday today", "top swing picks"\n• ⚔️ **Compare** — "compare ${exPair}"\n• ⚡ **Current signal** — "what's the signal?" or "should I buy?"\n\nI use the same ${signal?.models?.length || 4} algo models that power the app's signals!\n\n*Only ${mktLabel} ${assetWord}s are available. Switch markets in the header to analyze others.*`;
+            response = `## What I Can Do (${mktLabel})\n\n• 🔍 **Analyze ${assetWord}s** — "analyze ${exSym}"\n• 📊 **Explain indicators** — "what is MACD?", "what does overbought mean?"\n• 📈 **Trading concepts** — "what is swing trading?", "explain stop loss"\n• 🏆 **Find best ${assetWord}s** — "best for intraday today", "top swing picks"\n• ⚔️ **Compare** — "compare ${exPair}"\n• 🧪 **Backtest** — "backtest MACD on ${exSym}", "backtest all ${exSym}", "backtest top 10 screener"\n• ⚡ **Current signal** — "what's the signal?" or "should I buy?"\n\nI use the same ${signal?.models?.length || 4} algo models that power the app's signals!\n\n*Only ${mktLabel} ${assetWord}s are available. Switch markets in the header to analyze others.*`;
           } else {
-            response = `I'm not sure I understood that. I'm set to **${mktLabel}** — I can analyze: ${mktExamples}.\n\n• **"Analyze ${exSym}"** — full analysis with all 4 algo models\n• **"What is [indicator]?"** — RSI, MACD, Bollinger, VWAP, etc.\n• **"Best for intraday/swing"** — top ${assetWord} recommendations\n• **"Compare ${exPair}"** — head-to-head comparison\n• **"Current signal"** — breakdown of active ${assetWord}\n\nTry one of these or tap a suggestion below!`;
+            response = `I'm not sure I understood that. I'm set to **${mktLabel}** — I can analyze: ${mktExamples}.\n\n• **"Analyze ${exSym}"** — full analysis with all 4 algo models\n• **"What is [indicator]?"** — RSI, MACD, Bollinger, VWAP, etc.\n• **"Best for intraday/swing"** — top ${assetWord} recommendations\n• **"Backtest MACD on ${exSym}"** — test a strategy's efficiency\n• **"Backtest top 10 screener"** — compare strategies across stocks\n• **"Compare ${exPair}"** — head-to-head comparison\n\nTry one of these or tap a suggestion below!`;
           }
         }
       }

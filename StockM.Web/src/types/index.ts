@@ -216,6 +216,45 @@ export interface ModelBreakdown {
   confidence: number;
 }
 
+export interface MasterSignalData {
+  recommendation: string;
+  emoji: string;
+  confidence: number;
+  totalScore: number;
+  action: string;
+  color: string;
+  modelContributions: {
+    name: string;
+    signal: SignalType;
+    confidence: number;
+    weight: number;
+    weightedContribution: number;
+    score: number;
+  }[];
+  agreement: number;        // 0-100, how much models agree
+  regime: string;            // market regime detected
+  riskLevel: 'Low' | 'Medium' | 'High';
+  bestTimeframe: string;     // suggested trade duration
+  conviction: 'Weak' | 'Moderate' | 'Strong' | 'Very Strong';
+}
+
+export interface TradePlan {
+  suggestedUnits: number;
+  totalCost: number;
+  portfolioPct: number;         // % of capital this trade uses
+  riskAmount: number;            // max $ at risk
+  riskPct: number;               // % of capital at risk
+  rewardAmount: number;          // potential $ gain
+  riskRewardRatio: number;
+  stopLossPct: number;           // SL distance as %
+  takeProfitPct: number;         // TP distance as %
+  breakEvenTrades: number;       // how many wins needed per 10 to break even
+  kellyPct: number;              // Kelly criterion position %
+  volatilityAdjusted: boolean;
+  adjustedUnits: number;         // units after vol adjustment
+  adjustedCost: number;
+}
+
 export interface StockSignal {
   symbol: string;
   signal: SignalType;

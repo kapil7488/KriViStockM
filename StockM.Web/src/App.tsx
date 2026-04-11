@@ -1,23 +1,26 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { Market, MARKETS } from './types';
 import { Header, Watchlist } from './components/Header';
 import { StockChart } from './components/StockChart';
 import { SignalPanel, IndicatorsPanel } from './components/SignalPanel';
 import { RiskPanel, HistoryPanel } from './components/RiskPanel';
-import { FundamentalPanel } from './components/FundamentalPanel';
-import { QuantRatingPanel } from './components/QuantRatingPanel';
-import { GuidePanel } from './components/GuidePanel';
-import { PaperTradingPanel } from './components/PaperTradingPanel';
-import { TopPicksPanel } from './components/TopPicksPanel';
-import { IndicatorScreener } from './components/IndicatorScreener';
-import { InsightsPanel } from './components/InsightsPanel';
-import { ChatPanel } from './components/ChatPanel';
-import { KrivisStockPanel } from './krivis-stock/KrivisStockPanel';
 import { useStockData } from './hooks/useStockData';
 import { computeSAStyleData } from './services/quantScoring';
 import './App.css';
 
-type SidebarTab = 'insights' | 'technical' | 'fundamental' | 'quant' | 'risk' | 'trade' | 'picks' | 'krivis' | 'vwap' | 'guide' | 'chat';
+// Lazy-load heavy tab panels — only fetched when user switches to that tab
+const FundamentalPanel = lazy(() => import('./components/FundamentalPanel').then(m => ({ default: m.FundamentalPanel })));
+const QuantRatingPanel = lazy(() => import('./components/QuantRatingPanel').then(m => ({ default: m.QuantRatingPanel })));
+const GuidePanel = lazy(() => import('./components/GuidePanel').then(m => ({ default: m.GuidePanel })));
+const PaperTradingPanel = lazy(() => import('./components/PaperTradingPanel').then(m => ({ default: m.PaperTradingPanel })));
+const TopPicksPanel = lazy(() => import('./components/TopPicksPanel').then(m => ({ default: m.TopPicksPanel })));
+const IndicatorScreener = lazy(() => import('./components/IndicatorScreener').then(m => ({ default: m.IndicatorScreener })));
+const InsightsPanel = lazy(() => import('./components/InsightsPanel').then(m => ({ default: m.InsightsPanel })));
+const ChatPanel = lazy(() => import('./components/ChatPanel').then(m => ({ default: m.ChatPanel })));
+const KrivisStockPanel = lazy(() => import('./krivis-stock/KrivisStockPanel').then(m => ({ default: m.KrivisStockPanel })));
+const BacktestPanel = lazy(() => import('./components/BacktestPanel').then(m => ({ default: m.BacktestPanel })));
+
+type SidebarTab = 'insights' | 'technical' | 'fundamental' | 'quant' | 'risk' | 'trade' | 'picks' | 'krivis' | 'vwap' | 'backtest' | 'guide' | 'chat';
 
 // Read API keys from environment (set in .env, never committed to git)
 const AV_KEY = import.meta.env.VITE_AV_KEY || '';
@@ -34,6 +37,7 @@ export default function App() {
   const {
     loading, error, stockData, signal, risk, fundamentals,
     liveQuote, watchlistQuotes, signalHistory, dataSource, allTimeData,
+    mlPrediction, mlLoading,
     analyze, fetchWatchlist, refreshQuote, lastRefreshed,
   } = useStockData();
 
@@ -117,13 +121,41 @@ export default function App() {
       />
 
       <main className="main-content">
-        <div className="left-panel">
-          {stockData && <StockChart data={stockData} signal={signal} dataSource={dataSource} liveQuote={liveQuote} currency={mktConfig.currency} market={market} />}
+        {/* ── Vertical Tab Rail ── */}
+        <nav className="tab-rail">
+          {([
+            ['insights', '📰', 'Insights'],
+            ['technical', '📊', 'Technical'],
+            ['fundamental', '📋', 'Fundamentals'],
+            ['quant', '🔬', 'Quant'],
+            ['risk', '🛡️', 'Risk'],
+            ['trade', '💰', 'Trade'],
+            ['picks', '🔥', 'Top Picks'],
+            ['krivis', '🧠', "KriVi's"],
+            ['vwap', '📡', 'Screener'],
+            ['backtest', '🧪', 'Backtest'],
+            ['guide', '📖', 'Guide'],
+            ['chat', '💬', 'Chat'],
+          ] as [SidebarTab, string, string][]).map(([id, icon, label]) => (
+            <button
+              key={id}
+              className={`tab-rail-btn ${activeTab === id ? 'active' : ''}`}
+              onClick={() => setActiveTab(id)}
+              title={label}
+            >
+              <span className="tab-rail-icon">{icon}</span>
+              <span className="tab-rail-label">{label}</span>
+            </button>
+          ))}
+        </nav>
 
+        {/* ── Analysis Content (main area) ── */}
+        <div className="analysis-panel">
+          <Suspense fallback={<div className="card" style={{ padding: 24, textAlign: 'center', opacity: 0.6 }}>Loading…</div>}>
           {!stockData && !loading && (
             <div className="card empty-card">
               <div className="empty-icon">📈</div>
-              <h2>Welcome to StockM</h2>
+              <h2>Welcome to KriVi's StockM</h2>
               <p>Enter a stock symbol and click Analyze to get started.<br />
                 Powered by H-BLSTM + XGBoost hybrid scoring with the 2026 Liquidity Strategy.</p>
               <div className="data-source-banner simulated" style={{ marginBottom: 14 }}>
@@ -135,90 +167,20 @@ export default function App() {
                 </span>
               </div>
               <div className="feature-grid">
-                <div className="feature-card">
-                  <span className="feature-emoji">🕯️</span>
-                  <span>Candlestick / Line / Area charts</span>
-                </div>
-                <div className="feature-card">
-                  <span className="feature-emoji">📅</span>
-                  <span>1D to 5Y ranges + 1m–4H intervals</span>
-                </div>
-                <div className="feature-card">
-                  <span className="feature-emoji">📊</span>
-                  <span>SMA, EMA, BB, VWAP overlays</span>
-                </div>
-                <div className="feature-card">
-                  <span className="feature-emoji">📈</span>
-                  <span>RSI, MACD, Stochastic, ATR</span>
-                </div>
-                <div className="feature-card">
-                  <span className="feature-emoji">📋</span>
-                  <span>Fundamental analysis (P/E, EPS, ROE)</span>
-                </div>
-                <div className="feature-card">
-                  <span className="feature-emoji">�</span>
-                  <span>SA-style Quant Ratings & Factor Grades</span>
-                </div>
-                <div className="feature-card">
-                  <span className="feature-emoji">�🛡️</span>
-                  <span>Risk management & position sizing</span>
-                </div>
+                <div className="feature-card"><span className="feature-emoji">🕯️</span><span>Candlestick / Line / Area charts</span></div>
+                <div className="feature-card"><span className="feature-emoji">📅</span><span>1D to 5Y ranges + 1m–4H intervals</span></div>
+                <div className="feature-card"><span className="feature-emoji">📊</span><span>SMA, EMA, BB, VWAP overlays</span></div>
+                <div className="feature-card"><span className="feature-emoji">📈</span><span>RSI, MACD, Stochastic, ATR</span></div>
+                <div className="feature-card"><span className="feature-emoji">📋</span><span>Fundamental analysis (P/E, EPS, ROE)</span></div>
+                <div className="feature-card"><span className="feature-emoji">🔬</span><span>SA-style Quant Ratings & Factor Grades</span></div>
+                <div className="feature-card"><span className="feature-emoji">🛡️</span><span>Risk management & position sizing</span></div>
               </div>
             </div>
           )}
 
           {!stockData && !loading && <GuidePanel market={market} />}
 
-          {signal && <SignalPanel signal={signal} currency={mktConfig.currency} />}
           {error && <div className="card error-card">⚠️ {error}</div>}
-        </div>
-
-        <div className="right-panel">
-          {/* Sidebar Tabs */}
-          <div className="sidebar-tabs">
-            <button className={`sidebar-tab ${activeTab === 'insights' ? 'active' : ''}`}
-              onClick={() => setActiveTab('insights')}>
-              📰 Insights
-            </button>
-            <button className={`sidebar-tab ${activeTab === 'technical' ? 'active' : ''}`}
-              onClick={() => setActiveTab('technical')}>
-              📊 Technical
-            </button>
-            <button className={`sidebar-tab ${activeTab === 'fundamental' ? 'active' : ''}`}
-              onClick={() => setActiveTab('fundamental')}>
-              📋 Fundamental
-            </button>
-            <button className={`sidebar-tab ${activeTab === 'quant' ? 'active' : ''}`}
-              onClick={() => setActiveTab('quant')}>
-              🔬 Quant
-            </button>
-            <button className={`sidebar-tab ${activeTab === 'risk' ? 'active' : ''}`}
-              onClick={() => setActiveTab('risk')}>
-              🛡️ Risk
-            </button>
-            <button className={`sidebar-tab ${activeTab === 'trade' ? 'active' : ''}`}
-              onClick={() => setActiveTab('trade')}>
-              💰 Trade
-            </button>
-            <button className={`sidebar-tab ${activeTab === 'picks' ? 'active' : ''}`}
-              onClick={() => setActiveTab('picks')}>
-              🔥 Top Picks
-            </button>            <button className={`sidebar-tab ${activeTab === 'krivis' ? 'active' : ''}`}
-              onClick={() => setActiveTab('krivis')}>
-              🧠 KriVi's
-            </button>            <button className={`sidebar-tab ${activeTab === 'vwap' ? 'active' : ''}`}
-              onClick={() => setActiveTab('vwap')}>
-              � Screener
-            </button>
-            <button className={`sidebar-tab ${activeTab === 'guide' ? 'active' : ''}`}
-              onClick={() => setActiveTab('guide')}>
-              📖 Guide
-            </button>
-            <button className={`sidebar-tab ${activeTab === 'chat' ? 'active' : ''}`}
-              onClick={() => setActiveTab('chat')}>
-              💬 Chat
-            </button>
-          </div>
 
           {activeTab === 'insights' && (
             <InsightsPanel
@@ -257,6 +219,9 @@ export default function App() {
                     data={saData}
                     symbol={stockData.symbol}
                     currency={mktConfig.currency}
+                    signal={signal}
+                    mlPrediction={mlPrediction}
+                    mlLoading={mlLoading}
                     onPeerSelect={handleWatchlistSelect}
                   />
                 : <div className="card"><p className="empty-text">Analyze a stock to see Quant Rating & Factor Grades.</p></div>
@@ -310,6 +275,14 @@ export default function App() {
             />
           )}
 
+          {activeTab === 'backtest' && (
+            <BacktestPanel
+              market={market}
+              currency={mktConfig.currency}
+              onSelectSymbol={handleWatchlistSelect}
+            />
+          )}
+
           {activeTab === 'guide' && <GuidePanel market={market} />}
 
           {activeTab === 'chat' && (
@@ -323,6 +296,19 @@ export default function App() {
               fundamentals={fundamentals}
               onSelectSymbol={handleWatchlistSelect}
             />
+          )}
+          </Suspense>
+        </div>
+
+        {/* ── Chart Side Panel ── */}
+        <div className="chart-side-panel">
+          {stockData && <StockChart data={stockData} signal={signal} dataSource={dataSource} liveQuote={liveQuote} currency={mktConfig.currency} market={market} />}
+          {signal && <SignalPanel signal={signal} currency={mktConfig.currency} />}
+          {!stockData && !loading && (
+            <div className="card" style={{ textAlign: 'center', padding: '24px 16px' }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>📈</div>
+              <p className="empty-text">Analyze a stock to see its chart here.</p>
+            </div>
           )}
         </div>
       </main>

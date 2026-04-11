@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import {
   createChart, IChartApi, ISeriesApi, CandlestickData, LineData, HistogramData,
-  ColorType, CrosshairMode, LineStyle, UTCTimestamp, Time,
+  ColorType, CrosshairMode, LineStyle, UTCTimestamp,
 } from 'lightweight-charts';
 import {
   StockBar, StockSignal, StockQuote, ChartSettings, TimeRange, ChartType, ChartInterval,
@@ -143,8 +143,6 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
   // Chart refs
   const mainContainerRef = useRef<HTMLDivElement>(null);
   const mainChartRef = useRef<IChartApi | null>(null);
-  const volumeContainerRef = useRef<HTMLDivElement>(null);
-  const volumeChartRef = useRef<IChartApi | null>(null);
   const rsiContainerRef = useRef<HTMLDivElement>(null);
   const rsiChartRef = useRef<IChartApi | null>(null);
   const macdContainerRef = useRef<HTMLDivElement>(null);
@@ -410,7 +408,7 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
     rsiChartRef.current = chart;
     chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.1, bottom: 0.05 } });
 
-    const rsiSeries = chart.addLineSeries({ color: '#a855f7', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true });
+    const rsiSeries = chart.addLineSeries({ color: '#a855f7', lineWidth: 2, priceLineVisible: false, lastValueVisible: true });
     const rsiData: LineData[] = [];
     quotes.forEach((q, i) => {
       const idx = Math.max(0, Math.min(getIndicatorIdx(i), indicators.rsi.length - 1));
@@ -450,7 +448,7 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
     const chart = createBaseChart(container, 110);
     macdChartRef.current = chart;
 
-    const macdLine = chart.addLineSeries({ color: '#3b82f6', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+    const macdLine = chart.addLineSeries({ color: '#3b82f6', lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
     const signalLine = chart.addLineSeries({ color: '#f97316', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, lineStyle: LineStyle.Dashed });
     const histSeries = chart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false });
 
@@ -491,7 +489,7 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
     const chart = createBaseChart(container, 100);
     stochChartRef.current = chart;
 
-    const kLine = chart.addLineSeries({ color: '#3b82f6', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+    const kLine = chart.addLineSeries({ color: '#3b82f6', lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
     const dLine = chart.addLineSeries({ color: '#f97316', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, lineStyle: LineStyle.Dashed });
 
     const kData: LineData[] = [], dData: LineData[] = [];
@@ -536,7 +534,7 @@ export function StockChart({ data, signal, dataSource, liveQuote, currency, mark
       lineColor: '#14b8a6',
       topColor: 'rgba(20,184,166,0.15)',
       bottomColor: 'rgba(20,184,166,0.02)',
-      lineWidth: 1.5,
+      lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: true,
     });

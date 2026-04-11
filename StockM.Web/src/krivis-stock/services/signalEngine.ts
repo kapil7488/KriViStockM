@@ -97,7 +97,6 @@ function computeFactors(data: MultiTFData, structure: StructureResult): FactorSc
   // 9. Bollinger position on 5m — weight: 5% (bonus)
   const bbUp = lastValid(tf5m.bbUpper);
   const bbLow = lastValid(tf5m.bbLower);
-  const bbMid = lastValid(tf5m.bbMiddle);
   const close = data.last5mClose;
   const bbRange = bbUp - bbLow || 1;
   const bbPos = ((close - bbLow) / bbRange - 0.5) * 200; // -100 to +100

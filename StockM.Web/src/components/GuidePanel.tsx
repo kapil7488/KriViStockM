@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { Market, AllTimeData } from '../types';
 import { fetchAllTimeData } from '../services/stockApi';
 
@@ -179,7 +179,6 @@ function RsiChart({ mode }: { mode: 'bullish' | 'bearish' }) {
     );
   }
   // Bearish: Overbought rejection
-  const rsiPath = 'M10,60 L50,45 L80,20 L100,10 L120,15 L150,40 L180,60 L210,75 L240,80 L270,85';
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="ig-svg">
       <rect x="0" y="0" width={w} height={h} fill="#0f172a" rx="6" />
