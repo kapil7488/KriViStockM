@@ -43,8 +43,6 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          // TF.js in its own chunk — only loaded when ML inference runs
-          tfjs: ['@tensorflow/tfjs'],
           // Charting library
           charts: ['lightweight-charts'],
         },
